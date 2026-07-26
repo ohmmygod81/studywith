@@ -157,8 +157,11 @@ mountLayout('⚡ 오늘의 스터디', 'feed');
 requireAuth(async user => {
   currentUser = user;
   myData = await fetchMyData(currentUser.uid);
+  if (checkBanned(myData)) return;
   renderHeaderAvatar(myData);
-  mountSidebar(myData, 'feed');
+  const admin = isAdmin(currentUser);
+  updateAdminNav(admin);
+  mountSidebar(myData, 'feed', admin);
   updateDDay();
   loadFeed();
   checkTodayCheckin();
@@ -329,6 +332,7 @@ function renderFeedItem(doc) {
   const initial = nickInitial(d.nickname);
   const subTags = (d.subjects||[]).map(s => `<span class="feed-subject-tag">${s}</span>`).join('');
   const isMe = d.uid === currentUser?.uid;
+  const admin = isAdmin(currentUser);
   const cfg = CHECKIN_TYPES[d.type] || CHECKIN_TYPES.problem;
   const cheeredBy = d.cheeredBy || [];
   const iCheered = currentUser && cheeredBy.includes(currentUser.uid);
@@ -351,8 +355,8 @@ function renderFeedItem(doc) {
       <button class="btn-cheer${iCheered ? ' cheered' : ''}" onclick="toggleCheer('${doc.id}', this)">
         💪 화이팅! ${cheerCount > 0 ? `(${cheerCount})` : ''}
       </button>
-      ${isMe ? `<button class="btn-edit" onclick="openEditModal('${doc.id}')">✏️ 수정</button>
-      <button class="btn-delete" onclick="deleteCheckin('${doc.id}')">🗑️ 삭제</button>` : ''}
+      ${isMe ? `<button class="btn-edit" onclick="openEditModal('${doc.id}')">✏️ 수정</button>` : ''}
+      ${(isMe || admin) ? `<button class="btn-delete" onclick="deleteCheckin('${doc.id}')">🗑️ 삭제${admin && !isMe ? ' (관리자)' : ''}</button>` : ''}
     </div>
   </div>`;
 }
@@ -500,12 +504,16 @@ async function saveEditCheckin() {
 async function deleteCheckin(docId) {
   const d = checkinCache[docId];
   if (!d) { showToast('데이터를 불러오지 못했어요'); return; }
-  if (!confirm('이 인증을 삭제할까요? 되돌릴 수 없어요.')) return;
+  const isMe = d.uid === currentUser?.uid;
+  const admin = isAdmin(currentUser);
+  if (!isMe && !admin) return;
+  if (!confirm(admin && !isMe ? '[관리자] 이 회원의 인증을 삭제할까요? 되돌릴 수 없어요.' : '이 인증을 삭제할까요? 되돌릴 수 없어요.')) return;
 
   try {
-    const userRef = db.collection('users').doc(currentUser.uid);
+    const ownerUid = d.uid; // 관리자가 삭제하는 경우 작성자 본인의 통계를 갱신해야 함
+    const userRef = db.collection('users').doc(ownerUid);
     const userSnap = await userRef.get();
-    const udata = userSnap.data();
+    const udata = userSnap.data() || {};
 
     // 과목별 학습량에서 차감
     const subs = { ...(udata.subjects || {}) };
@@ -520,7 +528,7 @@ async function deleteCheckin(docId) {
 
     // 같은 날짜에 남은 다른 인증이 있는지 확인 (없으면 출석일/스트릭도 재계산)
     const sameDaySnap = await db.collection('checkins')
-      .where('uid', '==', currentUser.uid)
+      .where('uid', '==', ownerUid)
       .where('date', '==', d.date)
       .get();
     const others = sameDaySnap.docs.filter(doc => doc.id !== docId);
@@ -536,8 +544,10 @@ async function deleteCheckin(docId) {
     await db.collection('checkins').doc(docId).delete();
     delete checkinCache[docId];
 
-    myData = await fetchMyData(currentUser.uid);
-    if (d.date === todayStr()) checkTodayCheckin();
+    if (isMe) {
+      myData = await fetchMyData(currentUser.uid);
+      if (d.date === todayStr()) checkTodayCheckin();
+    }
     showToast('🗑️ 인증을 삭제했어요');
   } catch(e) {
     showToast('오류가 발생했어요. 다시 시도해주세요.');

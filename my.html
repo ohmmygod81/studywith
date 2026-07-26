@@ -99,8 +99,11 @@ mountLayout('👤 내 기록', 'my');
 requireAuth(async user => {
   currentUser = user;
   myData = await fetchMyData(currentUser.uid);
+  if (checkBanned(myData)) return;
   renderHeaderAvatar(myData);
-  mountSidebar(myData, 'my');
+  const admin = isAdmin(currentUser);
+  updateAdminNav(admin);
+  mountSidebar(myData, 'my', admin);
   updateMyUI();
   loadMyRank();
 });

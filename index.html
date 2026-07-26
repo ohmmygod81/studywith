@@ -130,12 +130,14 @@ async function doSignup() {
     const cred = await auth.createUserWithEmailAndPassword(email, pw);
     await db.collection('users').doc(cred.user.uid).set({
       nickname: nick,
+      email: email,
       examDate: exam,
       streak: 0,
       totalProblems: 0,
       totalDays: 0,
       subjects: {},
       lastCheckin: null,
+      banned: false,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     // onAuthStateChanged가 feed.html로 이동시켜줌

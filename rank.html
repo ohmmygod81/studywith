@@ -59,8 +59,11 @@ mountLayout('🏆 랭킹', 'rank');
 requireAuth(async user => {
   currentUser = user;
   myData = await fetchMyData(currentUser.uid);
+  if (checkBanned(myData)) return;
   renderHeaderAvatar(myData);
-  mountSidebar(myData, 'rank');
+  const admin = isAdmin(currentUser);
+  updateAdminNav(admin);
+  mountSidebar(myData, 'rank', admin);
   loadRanking();
 });
 

@@ -24,6 +24,53 @@ const CHECKIN_TYPES = {
   wrongnote: { icon:'📓', label:'오답노트', countLabel:'오답 정리 개수', unit:'개', feedVerb:'오답노트' }
 };
 
+// ══════════════════════════════════════
+// 🛡️ 관리자(마스터) 설정
+// 여기 이메일을 실제 관리자 계정 이메일로 바꿔주세요.
+// 이 이메일로 로그인한 계정은 게시글/댓글/인증 삭제, 회원 정지·데이터 삭제 권한을 가집니다.
+// ══════════════════════════════════════
+const ADMIN_EMAILS = [
+  'admin@example.com'   // ← 실제 관리자 이메일로 반드시 교체하세요
+];
+function isAdmin(user) {
+  return !!(user && user.email && ADMIN_EMAILS.includes(user.email));
+}
+
+// 정지된 계정이면 즉시 로그아웃시키고 true를 반환
+function checkBanned(myData) {
+  if (myData && myData.banned) {
+    alert(`관리자에 의해 계정 이용이 제한되었습니다.\n사유: ${myData.banReason || '커뮤니티 규칙 위반'}`);
+    auth.signOut().then(() => location.href = 'index.html');
+    return true;
+  }
+  return false;
+}
+
+// ── XSS 방지용 이스케이프 (게시글/댓글처럼 자유 입력 텍스트 출력 시 사용) ──
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ── Firebase Storage 이미지 업로드/삭제 (board.html, admin.html에서 사용) ──
+async function uploadImageFile(file, folder) {
+  const storage = firebase.storage();
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${folder}/${auth.currentUser.uid}_${Date.now()}.${ext}`;
+  const ref = storage.ref().child(path);
+  await ref.put(file);
+  return await ref.getDownloadURL();
+}
+async function deleteImageByURL(url) {
+  if (!url) return;
+  try {
+    await firebase.storage().refFromURL(url).delete();
+  } catch (e) {
+    console.error('이미지 삭제 실패', e);
+  }
+}
+
 // ── 색상 팔레트 ──
 const AVATAR_COLORS = [
   '#b5651d','#5f7d3d','#8c4a12','#a8402f','#c1852a',
@@ -110,10 +157,16 @@ function renderHeaderAvatar(myData) {
 // 이후 헤더/네비 디자인을 바꿀 땐 여기 한 곳만 고치면 됨.
 // ══════════════════════════════════════
 const NAV_TABS = [
-  { id: 'feed', icon: '📋', label: '피드',    href: 'feed.html' },
-  { id: 'rank', icon: '🏆', label: '랭킹',    href: 'rank.html' },
-  { id: 'my',   icon: '👤', label: '내 기록', href: 'my.html'   }
+  { id: 'feed',  icon: '📋', label: '피드',    href: 'feed.html'  },
+  { id: 'board', icon: '📸', label: '게시판',  href: 'board.html' },
+  { id: 'rank',  icon: '🏆', label: '랭킹',    href: 'rank.html'  },
+  { id: 'my',    icon: '👤', label: '내 기록', href: 'my.html'    }
 ];
+const ADMIN_TAB = { id: 'admin', icon: '🛠️', label: '관리자', href: 'admin.html' };
+
+function getNavTabs(showAdmin) {
+  return showAdmin ? [...NAV_TABS, ADMIN_TAB] : NAV_TABS;
+}
 
 function renderPageHeader(title) {
   return `
@@ -125,9 +178,9 @@ function renderPageHeader(title) {
   </div>`;
 }
 
-function renderBottomNav(activeTab) {
-  const btns = NAV_TABS.map(t => `
-    <div class="nav-btn${t.id === activeTab ? ' active' : ''}" id="nav-${t.id}" onclick="location.href='${t.href}'">
+function renderBottomNav(activeTab, showAdmin) {
+  const btns = getNavTabs(showAdmin).map(t => `
+    <div class="nav-btn${t.id === activeTab ? ' active' : ''}${t.id === 'admin' ? ' nav-admin' : ''}" id="nav-${t.id}" onclick="location.href='${t.href}'">
       <div class="ni">${t.icon}</div>
       <div class="nl">${t.label}</div>
     </div>`).join('');
@@ -135,19 +188,27 @@ function renderBottomNav(activeTab) {
 }
 
 // 페이지 로드 시 헤더/네비를 그려 넣는 진입점.
-// title: 페이지 제목 텍스트, activeTab: 'feed' | 'rank' | 'my'
+// title: 페이지 제목 텍스트, activeTab: 'feed' | 'board' | 'rank' | 'my'
+// 관리자 탭은 로그인 확인 후 별도로 updateAdminNav()를 호출해 추가한다.
 function mountLayout(title, activeTab) {
   const headerMount = document.getElementById('headerMount');
   const navMount = document.getElementById('navMount');
   if (headerMount) headerMount.innerHTML = renderPageHeader(title);
-  if (navMount) navMount.innerHTML = renderBottomNav(activeTab);
+  if (navMount) { navMount.innerHTML = renderBottomNav(activeTab, false); navMount.dataset.activeTab = activeTab; }
+}
+
+// 로그인한 유저가 관리자면 하단 탭바에 관리자 탭을 추가로 그려 넣는다.
+function updateAdminNav(showAdmin) {
+  const navMount = document.getElementById('navMount');
+  if (!navMount || !showAdmin) return;
+  navMount.innerHTML = renderBottomNav(navMount.dataset.activeTab, true);
 }
 
 // ══════════════════════════════════════
 // 데스크톱 좌측 사이드바 (카페/홈페이지형 레이아웃)
 // 로그인한 유저 정보를 불러온 뒤(mountLayout과 별개 시점) 호출한다.
 // ══════════════════════════════════════
-function renderSidebar(myData, activeTab) {
+function renderSidebar(myData, activeTab, showAdmin) {
   const nick = myData.nickname || '?';
   const initial = nickInitial(nick);
   const color = nickColor(nick);
@@ -161,8 +222,8 @@ function renderSidebar(myData, activeTab) {
     ddayHtml = `<div class="sidebar-dday">D-${diff}<span>${dstr} 필기시험</span></div>`;
   }
 
-  const navItems = NAV_TABS.map(t => `
-    <div class="sidebar-nav-item${t.id === activeTab ? ' active' : ''}" onclick="location.href='${t.href}'">
+  const navItems = getNavTabs(showAdmin).map(t => `
+    <div class="sidebar-nav-item${t.id === activeTab ? ' active' : ''}${t.id === 'admin' ? ' sidebar-admin' : ''}" onclick="location.href='${t.href}'">
       <span class="sni">${t.icon}</span><span class="snl">${t.label}</span>
     </div>`).join('');
 
@@ -170,7 +231,7 @@ function renderSidebar(myData, activeTab) {
   <div class="sidebar">
     <div class="sidebar-profile">
       <div class="sidebar-avatar" style="background:linear-gradient(135deg, ${color}, var(--cyan))">${initial}</div>
-      <div class="sidebar-nickname">${nick}</div>
+      <div class="sidebar-nickname">${nick}${showAdmin ? ' <span class="admin-badge">관리자</span>' : ''}</div>
       ${ddayHtml}
       <div class="sidebar-chips">
         <span class="sidebar-chip">🔥 ${myData.streak || 0}일 연속</span>
@@ -181,7 +242,7 @@ function renderSidebar(myData, activeTab) {
   </div>`;
 }
 
-function mountSidebar(myData, activeTab) {
+function mountSidebar(myData, activeTab, showAdmin) {
   const el = document.getElementById('sidebarMount');
-  if (el) el.innerHTML = renderSidebar(myData, activeTab);
+  if (el) el.innerHTML = renderSidebar(myData, activeTab, showAdmin);
 }

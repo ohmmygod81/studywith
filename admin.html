@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>전기기사 스터디 · 관리자</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="screen app-screen active" id="screen-app">
+
+  <div id="headerMount"></div>
+
+  <div class="app-shell">
+  <div id="sidebarMount"></div>
+  <div class="main-col">
+
+  <div class="tab-content active" id="tab-admin">
+
+    <div class="admin-notice">
+      🛡️ <strong>관리자 전용 페이지</strong>입니다. 회원 정지·데이터 삭제, 게시글/댓글 삭제가 가능해요.
+      정지된 회원은 즉시 로그아웃되고 재로그인이 차단됩니다.
+    </div>
+
+    <!-- 회원 관리 -->
+    <div class="admin-section">
+      <div class="admin-section-title">👥 회원 관리</div>
+      <input class="form-input" id="userSearch" placeholder="닉네임 또는 이메일로 검색" style="margin-bottom:12px;" oninput="renderUserList()">
+      <div id="userList"><div class="loading">⚡ 불러오는 중...</div></div>
+    </div>
+
+    <!-- 게시글 관리 -->
+    <div class="admin-section">
+      <div class="admin-section-title">📸 게시글 관리</div>
+      <div id="adminPostList"><div class="loading">⚡ 불러오는 중...</div></div>
+    </div>
+
+  </div>
+
+  </div>
+  </div>
+
+  <div id="navMount"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+let currentUser = null;
+let myData = {};
+let allUsers = [];
+
+mountLayout('🛠️ 관리자', 'admin');
+
+requireAuth(async user => {
+  currentUser = user;
+  myData = await fetchMyData(currentUser.uid);
+  if (checkBanned(myData)) return;
+
+  if (!isAdmin(currentUser)) {
+    alert('관리자만 접근할 수 있는 페이지예요.');
+    location.href = 'feed.html';
+    return;
+  }
+
+  renderHeaderAvatar(myData);
+  updateAdminNav(true);
+  mountSidebar(myData, 'admin', true);
+
+  loadUsers();
+  loadAdminPosts();
+});
+
+// ══════════════════════════════════════
+// 회원 관리
+// ══════════════════════════════════════
+function loadUsers() {
+  db.collection('users').orderBy('createdAt', 'desc').limit(300).onSnapshot(snap => {
+    allUsers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderUserList();
+  }, err => {
+    console.error(err);
+    document.getElementById('userList').innerHTML = '<div class="empty-state"><p>회원 목록을 불러오지 못했어요</p></div>';
+  });
+}
+
+function renderUserList() {
+  const q = (document.getElementById('userSearch').value || '').trim().toLowerCase();
+  const list = document.getElementById('userList');
+  const filtered = allUsers.filter(u =>
+    !q || (u.nickname || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
+  );
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty-state"><p>검색 결과가 없어요</p></div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(u => {
+    const admin = ADMIN_EMAILS.includes(u.email);
+    const color = nickColor(u.nickname || '?');
+    return `
+    <div class="admin-user-row">
+      <div class="rank-avatar" style="background:linear-gradient(135deg,${color},var(--cyan));width:38px;height:38px;font-size:13px;">${nickInitial(u.nickname)}</div>
+      <div class="admin-user-info">
+        <div class="admin-user-name">
+          ${escapeHtml(u.nickname || '익명')}
+          ${admin ? '<span class="admin-badge">관리자</span>' : ''}
+          ${u.banned ? '<span class="ban-badge">정지됨</span>' : ''}
+        </div>
+        <div class="admin-user-sub">${escapeHtml(u.email || '이메일 없음')} · 🔥${u.streak || 0} · 📚${u.totalProblems || 0}</div>
+      </div>
+      <div class="admin-user-actions">
+        ${admin ? '' : `
+          <button class="btn-edit" onclick="toggleBan('${u.id}', ${!u.banned})">${u.banned ? '정지 해제' : '정지'}</button>
+          <button class="btn-delete" onclick="confirmDeleteUserData('${u.id}', '${escapeHtml(u.nickname || '익명').replace(/'/g,"\\'")}')">데이터 삭제</button>
+        `}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleBan(uid, ban) {
+  try {
+    await db.collection('users').doc(uid).update({
+      banned: ban,
+      banReason: ban ? '관리자에 의해 이용이 제한됨 (도배/부적절한 게시물)' : firebase.firestore.FieldValue.delete()
+    });
+    showToast(ban ? '회원을 정지했어요' : '정지를 해제했어요');
+  } catch (e) {
+    console.error(e);
+    showToast('오류가 발생했어요.');
+  }
+}
+
+async function confirmDeleteUserData(uid, nickname) {
+  const sure = confirm(
+    `⚠️ '${nickname}' 회원의 모든 게시글·댓글·좋아요·인증기록을 영구 삭제하고 계정을 정지합니다.\n` +
+    `되돌릴 수 없어요. 계속할까요?`
+  );
+  if (!sure) return;
+
+  showToast('삭제 처리 중...');
+  try {
+    await adminDeleteUserData(uid);
+    showToast(`🗑️ '${nickname}' 회원의 데이터를 삭제하고 정지했어요`);
+  } catch (e) {
+    console.error(e);
+    showToast('삭제 중 오류가 발생했어요. 콘솔을 확인해주세요.');
+  }
+}
+
+// 회원의 모든 흔적(체크인/게시글/댓글/좋아요/응원)을 지우고 계정을 정지 처리한다.
+// ※ Firebase Auth 로그인 자격 자체를 삭제하려면 Cloud Functions(Admin SDK)가 필요합니다.
+//    이 함수는 클라이언트에서 가능한 범위인 "데이터 완전 삭제 + 로그인 차단(정지)"까지 처리합니다.
+async function adminDeleteUserData(targetUid) {
+  // 1. 체크인(인증) 삭제
+  const checkinsSnap = await db.collection('checkins').where('uid', '==', targetUid).get();
+  await Promise.all(checkinsSnap.docs.map(d => d.ref.delete()));
+
+  // 2. 본인이 쓴 게시글 + 그 댓글 + 첨부 이미지 삭제
+  const postsSnap = await db.collection('posts').where('uid', '==', targetUid).get();
+  for (const p of postsSnap.docs) {
+    const pd = p.data();
+    if (pd.imageUrl) await deleteImageByURL(pd.imageUrl);
+    const commentsSnap = await p.ref.collection('comments').get();
+    await Promise.all(commentsSnap.docs.map(c => c.ref.delete()));
+    await p.ref.delete();
+  }
+
+  // 3. 다른 사람 게시글에 남긴 댓글 삭제
+  try {
+    const myComments = await db.collectionGroup('comments').where('uid', '==', targetUid).get();
+    await Promise.all(myComments.docs.map(async c => {
+      await c.ref.delete();
+      if (c.ref.parent.parent) {
+        await c.ref.parent.parent.update({ commentCount: firebase.firestore.FieldValue.increment(-1) });
+      }
+    }));
+  } catch (e) {
+    console.warn('댓글 collectionGroup 조회 실패(색인이 아직 없을 수 있어요):', e);
+  }
+
+  // 4. 다른 게시글에 남긴 좋아요 제거
+  const likedPosts = await db.collection('posts').where('likes', 'array-contains', targetUid).get();
+  await Promise.all(likedPosts.docs.map(d => d.ref.update({
+    likes: firebase.firestore.FieldValue.arrayRemove(targetUid),
+    likeCount: firebase.firestore.FieldValue.increment(-1)
+  })));
+
+  // 5. 다른 인증에 보낸 화이팅(응원) 제거
+  const cheeredChk = await db.collection('checkins').where('cheeredBy', 'array-contains', targetUid).get();
+  await Promise.all(cheeredChk.docs.map(d => d.ref.update({
+    cheeredBy: firebase.firestore.FieldValue.arrayRemove(targetUid),
+    cheers: firebase.firestore.FieldValue.increment(-1)
+  })));
+
+  // 6. 회원 문서를 정지 처리 (로그인 시 requireAuth → checkBanned에서 즉시 차단됨)
+  await db.collection('users').doc(targetUid).update({
+    banned: true,
+    banReason: '관리자에 의해 계정 데이터가 삭제됨',
+    nickname: '(삭제된 계정)',
+    deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+// ══════════════════════════════════════
+// 게시글 관리
+// ══════════════════════════════════════
+function loadAdminPosts() {
+  db.collection('posts').orderBy('createdAt', 'desc').limit(100).onSnapshot(snap => {
+    const list = document.getElementById('adminPostList');
+    if (snap.empty) {
+      list.innerHTML = '<div class="empty-state"><p>게시글이 없어요</p></div>';
+      return;
+    }
+    list.innerHTML = snap.docs.map(doc => renderAdminPost(doc)).join('');
+  }, err => {
+    console.error(err);
+    document.getElementById('adminPostList').innerHTML = '<div class="empty-state"><p>게시글을 불러오지 못했어요</p></div>';
+  });
+}
+
+function renderAdminPost(doc) {
+  const d = doc.data();
+  const color = nickColor(d.nickname || '?');
+  return `
+  <div class="admin-post-row">
+    <div class="rank-avatar" style="background:linear-gradient(135deg,${color},var(--cyan));width:38px;height:38px;font-size:13px;">${nickInitial(d.nickname)}</div>
+    <div class="admin-user-info">
+      <div class="admin-user-name">${escapeHtml(d.nickname || '익명')} <span class="admin-user-sub">· ${timeAgo(d.createdAt)}</span></div>
+      ${d.text ? `<div class="admin-post-text">${escapeHtml(d.text)}</div>` : ''}
+      ${d.imageUrl ? `<img class="admin-post-thumb" src="${d.imageUrl}" onclick="window.open('${d.imageUrl}','_blank')">` : ''}
+    </div>
+    <div class="admin-user-actions">
+      <button class="btn-delete" onclick="adminDeletePost('${doc.id}')">🗑️ 삭제</button>
+    </div>
+  </div>`;
+}
+
+async function adminDeletePost(postId) {
+  if (!confirm('이 게시글과 모든 댓글을 삭제할까요? 되돌릴 수 없어요.')) return;
+  try {
+    const ref = db.collection('posts').doc(postId);
+    const snap = await ref.get();
+    const d = snap.data();
+    if (d && d.imageUrl) await deleteImageByURL(d.imageUrl);
+
+    const commentsSnap = await ref.collection('comments').get();
+    const batch = db.batch();
+    commentsSnap.docs.forEach(c => batch.delete(c.ref));
+    batch.delete(ref);
+    await batch.commit();
+
+    showToast('🗑️ 게시글을 삭제했어요');
+  } catch (e) {
+    console.error(e);
+    showToast('오류가 발생했어요.');
+  }
+}
+</script>
+</body>
+</html>
