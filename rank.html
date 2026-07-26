@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>전기기사 스터디</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="screen app-screen active" id="screen-app">
+
+  <!-- 헤더 (shared/common.js의 mountLayout()이 채워 넣음) -->
+  <div id="headerMount"></div>
+
+  <!-- ── 랭킹 탭 ── -->
+  <div class="tab-content active" id="tab-rank">
+    <div class="dday-banner" style="margin-bottom:14px">
+      <div style="flex:1">
+        <div style="font-size:13px;color:var(--t3);font-weight:600;">🏆 이번 주 스트릭 랭킹</div>
+        <div style="font-size:12px;color:var(--t4);margin-top:4px;">연속 출석일 기준 · 매주 초기화</div>
+      </div>
+    </div>
+    <div id="rankList">
+      <div class="loading">⚡ 불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- 하단 탭바 (shared/common.js의 mountLayout()이 채워 넣음) -->
+  <div id="navMount"></div>
+</div>
+
+<!-- 토스트 -->
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+let currentUser = null;
+let myData = {};
+
+mountLayout('🏆 랭킹', 'rank');
+
+requireAuth(async user => {
+  currentUser = user;
+  myData = await fetchMyData(currentUser.uid);
+  renderHeaderAvatar(myData);
+  loadRanking();
+});
+
+function loadRanking() {
+  const list = document.getElementById('rankList');
+  list.innerHTML = '<div class="loading">⚡ 불러오는 중...</div>';
+
+  db.collection('users')
+    .orderBy('streak', 'desc')
+    .limit(20)
+    .onSnapshot(snap => {
+      if (snap.empty) {
+        list.innerHTML = `<div class="empty-state"><div class="ei">🏆</div><p>아직 랭킹 데이터가 없어요</p></div>`;
+        return;
+      }
+      let myRankNum = '-';
+      const html = snap.docs.map((doc, i) => {
+        const d = doc.data();
+        const rank = i + 1;
+        if (doc.id === currentUser?.uid) {
+          myRankNum = rank;
+        }
+        const rankCls = rank===1?'r1':rank===2?'r2':rank===3?'r3':'rn';
+        const color = nickColor(d.nickname||'?');
+        return `
+        <div class="rank-item">
+          <div class="rank-num ${rankCls}">${rank<=3?['🥇','🥈','🥉'][rank-1]:rank}</div>
+          <div class="rank-avatar" style="background:linear-gradient(135deg,${color},var(--cyan))">${nickInitial(d.nickname)}</div>
+          <div class="rank-info">
+            <div class="rank-name">${d.nickname||'익명'}</div>
+            <div class="rank-stats">총 ${d.totalProblems||0}학습량 · ${d.totalDays||0}일 출석</div>
+          </div>
+          <div>
+            <div class="rank-score">${d.streak||0}</div>
+            <div class="rank-score-lbl">연속출석</div>
+          </div>
+        </div>`;
+      }).join('');
+      list.innerHTML = html;
+    });
+}
+</script>
+</body>
+</html>

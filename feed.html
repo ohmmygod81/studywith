@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>전기기사 스터디</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="screen app-screen active" id="screen-app">
+
+  <!-- 헤더 (shared/common.js의 mountLayout()이 채워 넣음) -->
+  <div id="headerMount"></div>
+
+  <!-- ── 피드 탭 ── -->
+  <div class="tab-content active" id="tab-feed">
+    <!-- D-Day -->
+    <div class="dday-banner">
+      <div class="dday-num" id="ddayNum">-</div>
+      <div class="dday-info">
+        <div class="dday-label">시험까지 남은 날</div>
+        <div class="dday-exam" id="ddayExam">-</div>
+        <div class="dday-msg" id="ddayMsg">매일 10문제씩!</div>
+      </div>
+    </div>
+
+    <!-- 오늘 인증 -->
+    <div class="checkin-card">
+      <div class="checkin-title">📝 오늘 공부 인증 <span class="today-badge" id="todayCheckinBadge" style="display:none"></span></div>
+
+      <div class="type-tabs" id="typeTabs">
+        <div class="type-tab active" data-type="problem" onclick="selectCheckinType('problem')">
+          <div class="tt-icon">📝</div>문제풀이
+        </div>
+        <div class="type-tab" data-type="concept" onclick="selectCheckinType('concept')">
+          <div class="tt-icon">📖</div>개념학습
+        </div>
+        <div class="type-tab" data-type="lecture" onclick="selectCheckinType('lecture')">
+          <div class="tt-icon">🎥</div>인강시청
+        </div>
+        <div class="type-tab" data-type="wrongnote" onclick="selectCheckinType('wrongnote')">
+          <div class="tt-icon">📓</div>오답노트
+        </div>
+      </div>
+
+      <div class="subject-chips" id="subjectChips">
+        <div class="subject-chip" data-sub="회로이론" onclick="toggleSubject(this)">⚡ 회로이론</div>
+        <div class="subject-chip" data-sub="전기자기학" onclick="toggleSubject(this)">🧲 전자기학</div>
+        <div class="subject-chip" data-sub="제어공학" onclick="toggleSubject(this)">🎛️ 제어공학</div>
+        <div class="subject-chip" data-sub="전력공학" onclick="toggleSubject(this)">🏭 전력공학</div>
+        <div class="subject-chip" data-sub="전기기기" onclick="toggleSubject(this)">⚙️ 전기기기</div>
+        <div class="subject-chip" data-sub="KEC" onclick="toggleSubject(this)">📋 KEC</div>
+      </div>
+
+      <div class="count-row">
+        <span class="count-label" id="countLabel">기출 문제 수</span>
+        <input class="count-input" type="number" id="problemCount" placeholder="0" min="0" max="999">
+        <span class="count-label" id="countUnit">문제</span>
+      </div>
+
+      <textarea class="memo-input" id="studyMemo" placeholder="오늘 공부 한 줄 소감 (선택)"></textarea>
+
+      <button class="btn-checkin" id="checkinBtn" onclick="submitCheckin()">✅ 오늘 인증하기</button>
+    </div>
+
+    <!-- 피드 -->
+    <div id="feedList">
+      <div class="loading">⚡ 불러오는 중...</div>
+    </div>
+  </div>
+
+<!-- ══════════ 인증 수정 모달 ══════════ -->
+<div class="reset-overlay" id="edit-overlay">
+  <div class="reset-modal" style="max-width:360px">
+    <div class="reset-title">✏️ 인증 수정</div>
+    <div class="reset-desc">인증 방식, 과목, 개수, 메모를 고칠 수 있어요.</div>
+
+    <div class="type-tabs" id="editTypeTabs">
+      <div class="type-tab" data-type="problem" onclick="editSelectCheckinType('problem')">
+        <div class="tt-icon">📝</div>문제풀이
+      </div>
+      <div class="type-tab" data-type="concept" onclick="editSelectCheckinType('concept')">
+        <div class="tt-icon">📖</div>개념학습
+      </div>
+      <div class="type-tab" data-type="lecture" onclick="editSelectCheckinType('lecture')">
+        <div class="tt-icon">🎥</div>인강시청
+      </div>
+      <div class="type-tab" data-type="wrongnote" onclick="editSelectCheckinType('wrongnote')">
+        <div class="tt-icon">📓</div>오답노트
+      </div>
+    </div>
+
+    <div class="subject-chips" id="editSubjectChips">
+      <div class="subject-chip" data-sub="회로이론" onclick="toggleEditSubject(this)">⚡ 회로이론</div>
+      <div class="subject-chip" data-sub="전기자기학" onclick="toggleEditSubject(this)">🧲 전자기학</div>
+      <div class="subject-chip" data-sub="제어공학" onclick="toggleEditSubject(this)">🎛️ 제어공학</div>
+      <div class="subject-chip" data-sub="전력공학" onclick="toggleEditSubject(this)">🏭 전력공학</div>
+      <div class="subject-chip" data-sub="전기기기" onclick="toggleEditSubject(this)">⚙️ 전기기기</div>
+      <div class="subject-chip" data-sub="KEC" onclick="toggleEditSubject(this)">📋 KEC</div>
+    </div>
+
+    <div class="count-row">
+      <span class="count-label" id="editCountLabel">기출 문제 수</span>
+      <input class="count-input" type="number" id="editCount" min="0" max="999">
+      <span class="count-label" id="editCountUnit">문제</span>
+    </div>
+
+    <textarea class="memo-input" id="editMemo" placeholder="오늘 공부 한 줄 소감 (선택)"></textarea>
+
+    <div class="reset-msg" id="edit-msg"></div>
+    <div class="reset-actions">
+      <button class="btn-secondary" onclick="closeEditModal()">취소</button>
+      <button class="btn-primary" id="edit-save-btn" onclick="saveEditCheckin()">저장</button>
+    </div>
+  </div>
+</div>
+
+  <!-- 하단 탭바 (shared/common.js의 mountLayout()이 채워 넣음) -->
+  <div id="navMount"></div>
+</div>
+
+<!-- 토스트 -->
+<div class="toast" id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+// ── 전역 상태 ──
+let currentUser = null;
+let myData = {};
+let selectedSubjects = [];
+let todayCheckinCount = 0;
+let currentCheckinType = 'problem';
+let checkinCache = {};
+let editingDocId = null;
+let editCheckinType = 'problem';
+let editSelectedSubjects = [];
+
+mountLayout('⚡ 오늘의 스터디', 'feed');
+
+requireAuth(async user => {
+  currentUser = user;
+  myData = await fetchMyData(currentUser.uid);
+  renderHeaderAvatar(myData);
+  updateDDay();
+  loadFeed();
+  checkTodayCheckin();
+});
+
+function selectCheckinType(type) {
+  currentCheckinType = type;
+  document.querySelectorAll('#typeTabs .type-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.type === type);
+  });
+  const cfg = CHECKIN_TYPES[type];
+  document.getElementById('countLabel').textContent = cfg.countLabel;
+  document.getElementById('countUnit').textContent = cfg.unit;
+}
+
+// ══════════════════════════════════════
+// D-Day
+// ══════════════════════════════════════
+function updateDDay() {
+  const examDate = myData.examDate ? new Date(myData.examDate) : new Date(2027,0,20);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.ceil((examDate - today) / 86400000);
+  document.getElementById('ddayNum').textContent = Math.max(0, diff);
+  document.getElementById('ddayExam').textContent =
+    `${examDate.getFullYear()}년 ${examDate.getMonth()+1}월 ${examDate.getDate()}일 필기시험`;
+  document.getElementById('ddayMsg').textContent =
+    diff > 30 ? '지금부터 기출 10문제씩! 습관이 합격을 만들어요 💪' :
+    diff > 7  ? '막판 스퍼트! 오답노트 집중 🔥' : '거의 다 왔어요! 컨디션 관리 💪';
+}
+
+// ══════════════════════════════════════
+// 오늘 인증
+// ══════════════════════════════════════
+async function checkTodayCheckin() {
+  const snap = await db.collection('checkins')
+    .where('uid', '==', currentUser.uid)
+    .where('date', '==', todayStr())
+    .get();
+  todayCheckinCount = snap.size;
+  updateTodayCheckinBadge();
+}
+
+function updateTodayCheckinBadge() {
+  const badge = document.getElementById('todayCheckinBadge');
+  if (!badge) return;
+  if (todayCheckinCount > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = `오늘 ${todayCheckinCount}번 인증 ✅`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function toggleSubject(el) {
+  el.classList.toggle('selected');
+  const sub = el.dataset.sub;
+  if (el.classList.contains('selected')) {
+    if (!selectedSubjects.includes(sub)) selectedSubjects.push(sub);
+  } else {
+    selectedSubjects = selectedSubjects.filter(s => s !== sub);
+  }
+}
+
+async function submitCheckin() {
+  if (selectedSubjects.length === 0) { showToast('과목을 선택해주세요!'); return; }
+
+  const cfg = CHECKIN_TYPES[currentCheckinType];
+  const count = parseInt(document.getElementById('problemCount').value) || 0;
+  if (count === 0) { showToast(`${cfg.countLabel}를 입력해주세요!`); return; }
+
+  const memo = document.getElementById('studyMemo').value.trim();
+  const btn  = document.getElementById('checkinBtn');
+  btn.disabled = true;
+  btn.textContent = '저장 중...';
+
+  try {
+    const today = todayStr();
+    const snap = await db.collection('users').doc(currentUser.uid).get();
+    const udata = snap.data();
+    const priorDates = udata.checkinDates || [];
+    const isFirstToday = !priorDates.includes(today);
+
+    // 오늘 첫 인증일 때만 스트릭·출석일 갱신 (하루에 여러 번 인증해도 출석일은 1일로 계산)
+    let streak = udata.streak || 0;
+    let totalDays = udata.totalDays || 0;
+    if (isFirstToday) {
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+      const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+      streak = priorDates.includes(yStr) ? (udata.streak||0)+1 : 1;
+      totalDays = (udata.totalDays||0) + 1;
+    }
+
+    // 과목별 학습량 업데이트
+    const subjUpdate = {};
+    const oldSubs = udata.subjects || {};
+    selectedSubjects.forEach(s => {
+      subjUpdate[`subjects.${s}`] = (oldSubs[s]||0) + count;
+    });
+
+    await db.collection('users').doc(currentUser.uid).update({
+      streak,
+      totalProblems: (udata.totalProblems||0) + count,
+      totalDays,
+      lastCheckin: firebase.firestore.FieldValue.serverTimestamp(),
+      checkinDates: firebase.firestore.FieldValue.arrayUnion(today),
+      ...subjUpdate
+    });
+
+    await db.collection('checkins').add({
+      uid: currentUser.uid,
+      nickname: udata.nickname,
+      date: today,
+      type: currentCheckinType,
+      subjects: selectedSubjects,
+      count,
+      memo,
+      streak,
+      cheers: 0,
+      cheeredBy: [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    myData = await fetchMyData(currentUser.uid);
+    loadFeed();
+    todayCheckinCount++;
+    updateTodayCheckinBadge();
+
+    // 폼 초기화 (바로 이어서 다음 인증 가능하도록)
+    document.querySelectorAll('#subjectChips .subject-chip.selected').forEach(el => el.classList.remove('selected'));
+    selectedSubjects = [];
+    document.getElementById('problemCount').value = '';
+    document.getElementById('studyMemo').value = '';
+    btn.disabled = false;
+    btn.textContent = '✅ 오늘 인증하기';
+    showToast(`🔥 ${streak}일 연속 출석! ${cfg.icon} ${cfg.label} ${count}${cfg.unit} 완료!`);
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '✅ 오늘 인증하기';
+    showToast('오류가 발생했어요. 다시 시도해주세요.');
+    console.error(e);
+  }
+}
+
+// ══════════════════════════════════════
+// 피드
+// ══════════════════════════════════════
+function loadFeed() {
+  const list = document.getElementById('feedList');
+  list.innerHTML = '<div class="loading">⚡ 불러오는 중...</div>';
+
+  db.collection('checkins')
+    .orderBy('createdAt', 'desc')
+    .limit(30)
+    .onSnapshot(snap => {
+      if (snap.empty) {
+        list.innerHTML = `<div class="empty-state"><div class="ei">📋</div><p>아직 인증이 없어요<br>첫 번째로 인증해보세요!</p></div>`;
+        return;
+      }
+      list.innerHTML = snap.docs.map(doc => renderFeedItem(doc)).join('');
+    });
+}
+
+function renderFeedItem(doc) {
+  const d = doc.data();
+  checkinCache[doc.id] = d;
+  const color = nickColor(d.nickname || '?');
+  const initial = nickInitial(d.nickname);
+  const subTags = (d.subjects||[]).map(s => `<span class="feed-subject-tag">${s}</span>`).join('');
+  const isMe = d.uid === currentUser?.uid;
+  const cfg = CHECKIN_TYPES[d.type] || CHECKIN_TYPES.problem;
+  const cheeredBy = d.cheeredBy || [];
+  const iCheered = currentUser && cheeredBy.includes(currentUser.uid);
+  const cheerCount = cheeredBy.length || d.cheers || 0;
+
+  return `
+  <div class="feed-item">
+    <div class="feed-header">
+      <div class="feed-avatar" style="background:linear-gradient(135deg,${color},var(--cyan))">${initial}</div>
+      <div class="feed-meta">
+        <div class="feed-name">${d.nickname || '익명'}${isMe ? ' <span style="font-size:11px;color:var(--t4)">(나)</span>' : ''}</div>
+        <div class="feed-time">${timeAgo(d.createdAt)}</div>
+      </div>
+      ${d.streak > 1 ? `<div class="feed-streak">🔥 ${d.streak}일 연속</div>` : ''}
+    </div>
+    <div class="feed-subjects">${subTags}</div>
+    <div class="feed-count">${cfg.icon} ${cfg.feedVerb} <strong>${d.count}${cfg.unit}</strong> 완료!</div>
+    ${d.memo ? `<div class="feed-memo">"${d.memo}"</div>` : ''}
+    <div class="feed-actions">
+      <button class="btn-cheer${iCheered ? ' cheered' : ''}" onclick="toggleCheer('${doc.id}', this)">
+        💪 화이팅! ${cheerCount > 0 ? `(${cheerCount})` : ''}
+      </button>
+      ${isMe ? `<button class="btn-edit" onclick="openEditModal('${doc.id}')">✏️ 수정</button>
+      <button class="btn-delete" onclick="deleteCheckin('${doc.id}')">🗑️ 삭제</button>` : ''}
+    </div>
+  </div>`;
+}
+
+async function toggleCheer(docId, btn) {
+  if (!currentUser) return;
+  const willCheer = !btn.classList.contains('cheered');
+  btn.classList.toggle('cheered');
+  const ref = db.collection('checkins').doc(docId);
+  try {
+    await ref.update({
+      cheeredBy: willCheer
+        ? firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+        : firebase.firestore.FieldValue.arrayRemove(currentUser.uid),
+      cheers: firebase.firestore.FieldValue.increment(willCheer ? 1 : -1)
+    });
+    showToast(willCheer ? '💪 화이팅 보냈어요!' : '취소했어요');
+  } catch(e) {
+    btn.classList.toggle('cheered'); // 실패 시 되돌리기
+    showToast('오류가 발생했어요. 다시 시도해주세요.');
+    console.error(e);
+  }
+}
+
+// ══════════════════════════════════════
+// 인증 수정
+// ══════════════════════════════════════
+function editSelectCheckinType(type) {
+  editCheckinType = type;
+  document.querySelectorAll('#editTypeTabs .type-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.type === type);
+  });
+  const cfg = CHECKIN_TYPES[type];
+  document.getElementById('editCountLabel').textContent = cfg.countLabel;
+  document.getElementById('editCountUnit').textContent = cfg.unit;
+}
+
+function toggleEditSubject(el) {
+  el.classList.toggle('selected');
+  const sub = el.dataset.sub;
+  if (el.classList.contains('selected')) {
+    if (!editSelectedSubjects.includes(sub)) editSelectedSubjects.push(sub);
+  } else {
+    editSelectedSubjects = editSelectedSubjects.filter(s => s !== sub);
+  }
+}
+
+function openEditModal(docId) {
+  const d = checkinCache[docId];
+  if (!d) { showToast('데이터를 불러오지 못했어요'); return; }
+
+  editingDocId = docId;
+  editCheckinType = d.type || 'problem';
+  editSelectedSubjects = [...(d.subjects || [])];
+
+  document.querySelectorAll('#editTypeTabs .type-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.type === editCheckinType);
+  });
+  const cfg = CHECKIN_TYPES[editCheckinType];
+  document.getElementById('editCountLabel').textContent = cfg.countLabel;
+  document.getElementById('editCountUnit').textContent = cfg.unit;
+
+  document.querySelectorAll('#editSubjectChips .subject-chip').forEach(el => {
+    el.classList.toggle('selected', editSelectedSubjects.includes(el.dataset.sub));
+  });
+
+  document.getElementById('editCount').value = d.count || 0;
+  document.getElementById('editMemo').value = d.memo || '';
+
+  const msg = document.getElementById('edit-msg');
+  msg.style.display = 'none';
+  msg.className = 'reset-msg';
+
+  document.getElementById('edit-overlay').classList.add('active');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-overlay').classList.remove('active');
+  editingDocId = null;
+}
+
+async function saveEditCheckin() {
+  if (!editingDocId) return;
+  const msg = document.getElementById('edit-msg');
+
+  if (editSelectedSubjects.length === 0) {
+    msg.textContent = '과목을 선택해주세요';
+    msg.className = 'reset-msg err';
+    return;
+  }
+  const newCount = parseInt(document.getElementById('editCount').value) || 0;
+  if (newCount === 0) {
+    msg.textContent = '개수를 입력해주세요';
+    msg.className = 'reset-msg err';
+    return;
+  }
+  const newMemo = document.getElementById('editMemo').value.trim();
+  const btn = document.getElementById('edit-save-btn');
+  btn.disabled = true;
+  btn.textContent = '저장 중...';
+
+  try {
+    const oldData = checkinCache[editingDocId];
+    const oldSubjects = oldData.subjects || [];
+    const oldCount = oldData.count || 0;
+
+    const userRef = db.collection('users').doc(currentUser.uid);
+    const userSnap = await userRef.get();
+    const udata = userSnap.data();
+    const subs = { ...(udata.subjects || {}) };
+
+    // 기존 과목 반영분 차감
+    oldSubjects.forEach(s => { subs[s] = (subs[s] || 0) - oldCount; });
+    // 수정된 과목 반영
+    editSelectedSubjects.forEach(s => { subs[s] = (subs[s] || 0) + newCount; });
+
+    const subjUpdate = {};
+    Object.keys(subs).forEach(s => { subjUpdate[`subjects.${s}`] = Math.max(0, subs[s]); });
+
+    await userRef.update({
+      totalProblems: Math.max(0, (udata.totalProblems || 0) - oldCount + newCount),
+      ...subjUpdate
+    });
+
+    await db.collection('checkins').doc(editingDocId).update({
+      type: editCheckinType,
+      subjects: editSelectedSubjects,
+      count: newCount,
+      memo: newMemo
+    });
+
+    myData = await fetchMyData(currentUser.uid);
+    closeEditModal();
+    showToast('✏️ 인증을 수정했어요!');
+  } catch(e) {
+    msg.textContent = '오류가 발생했어요. 다시 시도해주세요';
+    msg.className = 'reset-msg err';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '저장';
+  }
+}
+
+async function deleteCheckin(docId) {
+  const d = checkinCache[docId];
+  if (!d) { showToast('데이터를 불러오지 못했어요'); return; }
+  if (!confirm('이 인증을 삭제할까요? 되돌릴 수 없어요.')) return;
+
+  try {
+    const userRef = db.collection('users').doc(currentUser.uid);
+    const userSnap = await userRef.get();
+    const udata = userSnap.data();
+
+    // 과목별 학습량에서 차감
+    const subs = { ...(udata.subjects || {}) };
+    (d.subjects || []).forEach(s => { subs[s] = Math.max(0, (subs[s]||0) - (d.count||0)); });
+    const subjUpdate = {};
+    Object.keys(subs).forEach(s => { subjUpdate[`subjects.${s}`] = subs[s]; });
+
+    const updatePayload = {
+      totalProblems: Math.max(0, (udata.totalProblems||0) - (d.count||0)),
+      ...subjUpdate
+    };
+
+    // 같은 날짜에 남은 다른 인증이 있는지 확인 (없으면 출석일/스트릭도 재계산)
+    const sameDaySnap = await db.collection('checkins')
+      .where('uid', '==', currentUser.uid)
+      .where('date', '==', d.date)
+      .get();
+    const others = sameDaySnap.docs.filter(doc => doc.id !== docId);
+
+    if (others.length === 0) {
+      const newDates = (udata.checkinDates || []).filter(dt => dt !== d.date);
+      updatePayload.checkinDates = newDates;
+      updatePayload.totalDays = Math.max(0, (udata.totalDays||0) - 1);
+      updatePayload.streak = computeStreakFromDates(newDates);
+    }
+
+    await userRef.update(updatePayload);
+    await db.collection('checkins').doc(docId).delete();
+    delete checkinCache[docId];
+
+    myData = await fetchMyData(currentUser.uid);
+    if (d.date === todayStr()) checkTodayCheckin();
+    showToast('🗑️ 인증을 삭제했어요');
+  } catch(e) {
+    showToast('오류가 발생했어요. 다시 시도해주세요.');
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>
