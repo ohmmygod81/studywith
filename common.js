@@ -142,3 +142,46 @@ function mountLayout(title, activeTab) {
   if (headerMount) headerMount.innerHTML = renderPageHeader(title);
   if (navMount) navMount.innerHTML = renderBottomNav(activeTab);
 }
+
+// ══════════════════════════════════════
+// 데스크톱 좌측 사이드바 (카페/홈페이지형 레이아웃)
+// 로그인한 유저 정보를 불러온 뒤(mountLayout과 별개 시점) 호출한다.
+// ══════════════════════════════════════
+function renderSidebar(myData, activeTab) {
+  const nick = myData.nickname || '?';
+  const initial = nickInitial(nick);
+  const color = nickColor(nick);
+
+  let ddayHtml = '';
+  if (myData.examDate) {
+    const examDate = new Date(myData.examDate);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const diff = Math.max(0, Math.ceil((examDate - today) / 86400000));
+    const dstr = `${examDate.getFullYear()}.${String(examDate.getMonth()+1).padStart(2,'0')}.${String(examDate.getDate()).padStart(2,'0')}`;
+    ddayHtml = `<div class="sidebar-dday">D-${diff}<span>${dstr} 필기시험</span></div>`;
+  }
+
+  const navItems = NAV_TABS.map(t => `
+    <div class="sidebar-nav-item${t.id === activeTab ? ' active' : ''}" onclick="location.href='${t.href}'">
+      <span class="sni">${t.icon}</span><span class="snl">${t.label}</span>
+    </div>`).join('');
+
+  return `
+  <div class="sidebar">
+    <div class="sidebar-profile">
+      <div class="sidebar-avatar" style="background:linear-gradient(135deg, ${color}, var(--cyan))">${initial}</div>
+      <div class="sidebar-nickname">${nick}</div>
+      ${ddayHtml}
+      <div class="sidebar-chips">
+        <span class="sidebar-chip">🔥 ${myData.streak || 0}일 연속</span>
+        <span class="sidebar-chip">📚 ${myData.totalProblems || 0}</span>
+      </div>
+    </div>
+    <div class="sidebar-nav">${navItems}</div>
+  </div>`;
+}
+
+function mountSidebar(myData, activeTab) {
+  const el = document.getElementById('sidebarMount');
+  if (el) el.innerHTML = renderSidebar(myData, activeTab);
+}

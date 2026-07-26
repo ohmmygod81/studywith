@@ -21,6 +21,11 @@
   <!-- 헤더 (shared/common.js의 mountLayout()이 채워 넣음) -->
   <div id="headerMount"></div>
 
+  <div class="app-shell">
+  <!-- 데스크톱 좌측 사이드바 (shared/common.js의 mountSidebar()가 채워 넣음) -->
+  <div id="sidebarMount"></div>
+  <div class="main-col">
+
   <!-- ── 랭킹 탭 ── -->
   <div class="tab-content active" id="tab-rank">
     <div class="dday-banner" style="margin-bottom:14px">
@@ -32,6 +37,9 @@
     <div id="rankList">
       <div class="loading">⚡ 불러오는 중...</div>
     </div>
+  </div>
+
+  </div>
   </div>
 
   <!-- 하단 탭바 (shared/common.js의 mountLayout()이 채워 넣음) -->
@@ -52,6 +60,7 @@ requireAuth(async user => {
   currentUser = user;
   myData = await fetchMyData(currentUser.uid);
   renderHeaderAvatar(myData);
+  mountSidebar(myData, 'rank');
   loadRanking();
 });
 
