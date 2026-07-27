@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>전기기사 스터디 — 랭킹</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="screen app-screen active">
+  <div id="headerMount"></div>
+
+  <div class="tab-content active" id="tab-rank">
+    <div class="rank-header-banner">
+      <div class="rank-header-icon">🏆</div>
+      <div class="rank-header-text">
+        <div class="rank-header-title">스트릭 랭킹</div>
+        <div class="rank-header-sub">연속 출석일 기준 · 오늘도 인증하면 올라가요!</div>
+      </div>
+    </div>
+    <div class="rank-list-wrap" id="rankList">
+      <div class="loading">⚡ 불러오는 중...</div>
+    </div>
+  </div>
+
+  <div id="navMount"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="common.js"></script>
+<script>
+let currentUser = null;
+let myData      = {};
+
+mountLayout('🏆 랭킹', 'rank');
+
+requireAuth(async user => {
+  currentUser = user;
+  myData = await fetchMyData(user.uid);
+  renderSidebarUser(user, myData);
+  loadRanking();
+});
+
+function loadRanking() {
+  const list = document.getElementById('rankList');
+  db.collection('users').orderBy('streak','desc').limit(30).onSnapshot(snap => {
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="ei">🏆</div><p>아직 랭킹 데이터가 없어요</p></div>`;
+      return;
+    }
+    list.innerHTML = snap.docs.map((doc,i) => {
+      const d    = doc.data();
+      const rank = i + 1;
+      const col  = nickColor(d.nickname||'?');
+      const ini  = nickInitial(d.nickname||'?');
+      const isMe = doc.id === currentUser?.uid;
+      const rCls = rank===1?'r1':rank===2?'r2':rank===3?'r3':'rn';
+      const rNum = rank<=3 ? ['🥇','🥈','🥉'][rank-1] : rank;
+      const adminBadge = d.email === MASTER_EMAIL ? ' 👑' : '';
+
+      return `
+      <div class="rank-item" style="${isMe?'background:linear-gradient(90deg,#dbeafe,#fff);border-color:#93c3fd':''}">
+        <div class="rank-num ${rCls}">${rNum}</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,${col},#0891b2)">${ini}</div>
+        <div class="rank-info">
+          <div class="rank-name">${d.nickname||'익명'}${adminBadge}${isMe?' <span style="font-size:12px;color:var(--blue)">(나)</span>':''}</div>
+          <div class="rank-stats">총 ${d.totalProblems||0}문제 · ${d.totalDays||0}일 출석</div>
+        </div>
+        <div class="rank-score-wrap">
+          <div class="rank-score">${d.streak||0}</div>
+          <div class="rank-score-lbl">연속출석</div>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+</script>
+</body>
+</html>

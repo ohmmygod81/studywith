@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>전기기사 스터디 — 커뮤니티</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+.autoResize { overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="screen app-screen active">
+  <div id="headerMount"></div>
+
+  <!-- ── 목록 뷰 ── -->
+  <div class="post-list-view" id="postListView">
+    <div class="board-topbar">
+      <div class="board-cats-inline" id="boardCats">
+        <div class="cat-tab active" data-cat="all"      onclick="filterCat('all',this)">📋 전체</div>
+        <div class="cat-tab" data-cat="question"        onclick="filterCat('question',this)">❓ 질문</div>
+        <div class="cat-tab" data-cat="brag"            onclick="filterCat('brag',this)">🎉 자랑</div>
+        <div class="cat-tab" data-cat="share"           onclick="filterCat('share',this)">💡 공유/팁</div>
+        <div class="cat-tab" data-cat="review"          onclick="filterCat('review',this)">📝 시험후기</div>
+        <div class="cat-tab" data-cat="free"            onclick="filterCat('free',this)">💬 자유</div>
+      </div>
+      <button class="btn-write" onclick="openWriteModal()">✏️ 글쓰기</button>
+    </div>
+    <div class="post-list" id="postList">
+      <div class="loading">⚡ 불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- ── 상세 뷰 ── -->
+  <div class="post-detail" id="postDetail">
+    <div class="detail-back" onclick="backToList()">← 목록으로</div>
+    <div class="post-full" id="postFullCard"></div>
+    <div class="comment-section" id="commentSection">
+      <div class="comment-section-title">
+        💬 댓글 <span class="comment-count-badge" id="commentCountBadge">0</span>
+      </div>
+      <div id="commentList"></div>
+      <div class="comment-input-row">
+        <textarea class="comment-textarea autoResize" id="commentInput"
+          placeholder="댓글을 입력하세요... (Enter 등록 / Shift+Enter 줄바꿈)" rows="1"
+          oninput="autoResize(this)"></textarea>
+        <button class="btn-comment-submit" id="commentSubmitBtn" onclick="submitComment()">등록</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="navMount"></div>
+</div>
+
+<!-- ── 글쓰기 모달 ── -->
+<div class="modal-overlay" id="writeModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">✏️ 새 글 작성</div>
+      <button class="modal-close" onclick="closeWriteModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="subject-tag-label">카테고리 선택</label>
+      <div class="cat-select-grid">
+        <button class="cat-select-btn" data-cat="question" onclick="selectWriteCat(this)"><span class="cs-icon">❓</span>질문</button>
+        <button class="cat-select-btn" data-cat="brag"     onclick="selectWriteCat(this)"><span class="cs-icon">🎉</span>자랑</button>
+        <button class="cat-select-btn" data-cat="share"    onclick="selectWriteCat(this)"><span class="cs-icon">💡</span>공유/팁</button>
+        <button class="cat-select-btn" data-cat="review"   onclick="selectWriteCat(this)"><span class="cs-icon">📝</span>시험후기</button>
+        <button class="cat-select-btn" data-cat="free"     onclick="selectWriteCat(this)"><span class="cs-icon">💬</span>자유</button>
+      </div>
+      <div class="subject-tag-select">
+        <label class="subject-tag-label">관련 과목 (선택)</label>
+        <div class="subject-tag-chips">
+          <button class="stag-chip" data-sub="회로이론"   onclick="toggleWriteSubject(this)">⚡ 회로이론</button>
+          <button class="stag-chip" data-sub="전기자기학" onclick="toggleWriteSubject(this)">🧲 전자기학</button>
+          <button class="stag-chip" data-sub="제어공학"   onclick="toggleWriteSubject(this)">🎛️ 제어공학</button>
+          <button class="stag-chip" data-sub="전력공학"   onclick="toggleWriteSubject(this)">🏭 전력공학</button>
+          <button class="stag-chip" data-sub="전기기기"   onclick="toggleWriteSubject(this)">⚙️ 전기기기</button>
+          <button class="stag-chip" data-sub="KEC"        onclick="toggleWriteSubject(this)">📋 KEC</button>
+        </div>
+      </div>
+      <input class="write-title-input" id="writeTitle" placeholder="제목을 입력하세요" maxlength="80">
+      <textarea class="write-body-input" id="writeBody"
+        placeholder="내용을 입력하세요&#10;&#10;질문, 공부 팁, 자랑, 시험 후기 뭐든 환영해요 😊"></textarea>
+      <button class="btn-primary" onclick="submitPost()" id="submitPostBtn">게시하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 관리자 게시글 수정 모달 ── -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">✏️ 게시글 수정</div>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input class="write-title-input" id="editTitle" placeholder="제목">
+      <textarea class="write-body-input" id="editBody" style="min-height:180px"></textarea>
+      <button class="btn-primary" onclick="submitEdit()" id="submitEditBtn">수정 완료</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="common.js"></script>
+<script>
+let currentUser = null;
+let myData      = {};
+let currentCat  = 'all';
+let writeCat    = '';
+let writeSubjects = [];
+let currentPostId = null;
+let editingPostId = null;
+let unsubFeed     = null;
+let unsubComments = null;
+
+const CAT_CONFIG = {
+  question:{ label:'질문',    badge:'cb-question', icon:'❓' },
+  brag:    { label:'자랑',    badge:'cb-brag',     icon:'🎉' },
+  share:   { label:'공유/팁', badge:'cb-share',    icon:'💡' },
+  review:  { label:'시험후기',badge:'cb-review',   icon:'📝' },
+  free:    { label:'자유',    badge:'cb-share',    icon:'💬' },
+  notice:  { label:'공지',    badge:'cb-notice',   icon:'📢' }
+};
+
+mountLayout('💬 커뮤니티', 'board');
+
+requireAuth(async user => {
+  currentUser = user;
+  myData = await fetchMyData(user.uid);
+  renderSidebarUser(user, myData);
+  loadPosts();
+});
+
+/* ══════════════════════════════════════
+   게시글 목록
+══════════════════════════════════════ */
+function loadPosts() {
+  const list = document.getElementById('postList');
+  list.innerHTML = '<div class="loading">⚡ 불러오는 중...</div>';
+  if (unsubFeed) { unsubFeed(); unsubFeed = null; }
+
+  let q = db.collection('posts').orderBy('createdAt','desc').limit(60);
+  if (currentCat !== 'all')
+    q = db.collection('posts').where('cat','==',currentCat).orderBy('createdAt','desc').limit(60);
+
+  unsubFeed = q.onSnapshot(snap => {
+    if (snap.empty) {
+      list.innerHTML = `<div class="board-empty"><div class="bi">📋</div>
+        <p>아직 글이 없어요<br>첫 번째 글을 작성해보세요!</p>
+        <button class="btn-write-first" onclick="openWriteModal()">✏️ 첫 글 쓰기</button></div>`;
+      return;
+    }
+    const pinned = snap.docs.filter(d => d.data().pinned);
+    const normal = snap.docs.filter(d => !d.data().pinned);
+    list.innerHTML = [...pinned,...normal].map(renderPostItem).join('');
+  }, err => {
+    list.innerHTML = `<div class="board-empty"><div class="bi">⚠️</div><p>불러오기 실패<br>새로고침 해주세요</p></div>`;
+    console.error(err);
+  });
+}
+
+function renderPostItem(doc) {
+  const d   = doc.data();
+  const cat = CAT_CONFIG[d.cat] || CAT_CONFIG.free;
+  const col = nickColor(d.authorNick||'?');
+  const ini = nickInitial(d.authorNick||'?');
+  const tags = (d.subjects||[]).map(s=>`<span class="post-full-tag">${s}</span>`).join('');
+  const admin = isAdmin(currentUser);
+  const isMe  = d.authorUid === currentUser?.uid;
+
+  return `
+  <div class="post-item" onclick="openPost('${doc.id}')">
+    <div class="post-item-header">
+      <div class="post-avatar" style="background:linear-gradient(135deg,${col},#0891b2)">${ini}</div>
+      <div class="post-meta">
+        <div class="post-author">${esc(d.authorNick||'익명')}${d.authorEmail===MASTER_EMAIL?' 👑':''}</div>
+        <div class="post-time">${timeAgo(d.createdAt)}</div>
+      </div>
+      ${d.pinned?'<span class="pin-badge">📌 공지</span>':''}
+      <span class="cat-badge ${cat.badge}">${cat.icon} ${cat.label}</span>
+    </div>
+    <div class="post-title">${esc(d.title)}</div>
+    <div class="post-preview">${esc(d.body)}</div>
+    ${tags?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">${tags}</div>`:''}
+    <div class="post-footer">
+      <span class="post-stat">❤️ ${d.likes||0}</span>
+      <span class="post-stat">💬 ${d.commentCount||0}</span>
+      <span class="post-stat">👁 ${d.views||0}</span>
+      ${(admin||isMe)?`<span class="post-stat" style="margin-left:auto">
+        ${admin&&d.pinned?`<button onclick="event.stopPropagation();togglePin('${doc.id}',false)" style="background:#fef3c7;border:none;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#b45309;cursor:pointer">📌 핀해제</button>`:''}
+        ${admin&&!d.pinned?`<button onclick="event.stopPropagation();togglePin('${doc.id}',true)" style="background:#fee2e2;border:none;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#dc2626;cursor:pointer">📌 핀고정</button>`:''}
+        ${(admin||isMe)?`<button onclick="event.stopPropagation();openEditModal('${doc.id}')" style="background:#dbeafe;border:none;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;margin-left:4px">✏️ 수정</button>`:''}
+        ${(admin||isMe)?`<button onclick="event.stopPropagation();deletePost('${doc.id}')" style="background:#fee2e2;border:none;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#dc2626;cursor:pointer;margin-left:4px">🗑️ 삭제</button>`:''}
+      </span>`:''}
+    </div>
+  </div>`;
+}
+
+/* ══════════════════════════════════════
+   게시글 상세
+══════════════════════════════════════ */
+async function openPost(docId) {
+  currentPostId = docId;
+  document.getElementById('postListView').classList.add('hidden');
+  document.getElementById('postDetail').classList.add('active');
+  document.getElementById('postFullCard').innerHTML = '<div class="loading">⚡ 불러오는 중...</div>';
+  document.getElementById('commentList').innerHTML = '';
+  db.collection('posts').doc(docId).update({ views: firebase.firestore.FieldValue.increment(1) }).catch(()=>{});
+  const snap = await db.collection('posts').doc(docId).get();
+  if (!snap.exists) { showToast('게시글을 찾을 수 없어요'); backToList(); return; }
+  renderPostFull(snap.id, snap.data());
+  loadComments(docId);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function renderPostFull(docId, d) {
+  const cat   = CAT_CONFIG[d.cat] || CAT_CONFIG.free;
+  const col   = nickColor(d.authorNick||'?');
+  const ini   = nickInitial(d.authorNick||'?');
+  const admin = isAdmin(currentUser);
+  const isMe  = d.authorUid === currentUser?.uid;
+  const likedBy = d.likedBy||[];
+  const iLiked  = currentUser && likedBy.includes(currentUser.uid);
+  const tags = (d.subjects||[]).map(s=>`<span class="post-full-tag">${s}</span>`).join('');
+
+  document.getElementById('postFullCard').innerHTML = `
+    <div class="post-full-header">
+      <div class="post-full-cat"><span class="cat-badge ${cat.badge}">${cat.icon} ${cat.label}</span></div>
+      <div class="post-full-title">${esc(d.title)}</div>
+      <div class="post-full-author-row">
+        <div class="post-full-avatar" style="background:linear-gradient(135deg,${col},#0891b2)">${ini}</div>
+        <div>
+          <div class="post-full-author">${esc(d.authorNick||'익명')}${d.authorEmail===MASTER_EMAIL?' 👑':''}</div>
+          <div class="post-full-time">${timeAgo(d.createdAt)}</div>
+        </div>
+      </div>
+      ${tags?`<div class="post-full-tags">${tags}</div>`:''}
+    </div>
+    <div class="post-full-body">${esc(d.body)}</div>
+    <div class="post-full-actions">
+      <button class="btn-like${iLiked?' liked':''}" id="likeBtn" onclick="toggleLike('${docId}',this)">
+        ${iLiked?'❤️':'🤍'} ${d.likes||0}
+      </button>
+      ${(admin||isMe)?`<button class="btn-like" onclick="openEditModal('${docId}')">✏️ 수정</button>`:''}
+      ${(admin||isMe)?`<button class="btn-del-post" onclick="deletePost('${docId}')">🗑️ 삭제</button>`:''}
+      ${admin?`<button class="btn-like" onclick="togglePin('${docId}',${!d.pinned})">${d.pinned?'📌 핀해제':'📌 핀고정'}</button>`:''}
+    </div>`;
+}
+
+function backToList() {
+  document.getElementById('postListView').classList.remove('hidden');
+  document.getElementById('postDetail').classList.remove('active');
+  if (unsubComments) { unsubComments(); unsubComments = null; }
+  currentPostId = null;
+  window.scrollTo({top:0});
+}
+
+async function toggleLike(docId, btn) {
+  const willLike = !btn.classList.contains('liked');
+  btn.classList.toggle('liked');
+  try {
+    await db.collection('posts').doc(docId).update({
+      likedBy: willLike
+        ? firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+        : firebase.firestore.FieldValue.arrayRemove(currentUser.uid),
+      likes: firebase.firestore.FieldValue.increment(willLike?1:-1)
+    });
+    const s = await db.collection('posts').doc(docId).get();
+    btn.innerHTML = `${willLike?'❤️':'🤍'} ${s.data().likes||0}`;
+    showToast(willLike?'❤️ 좋아요!':'좋아요 취소');
+  } catch(e) { btn.classList.toggle('liked'); showToast('오류 발생'); }
+}
+
+async function deletePost(docId) {
+  if (!confirm('게시글을 삭제할까요? 댓글도 모두 삭제돼요.')) return;
+  try {
+    const cSnap = await db.collection('posts').doc(docId).collection('comments').get();
+    const batch = db.batch();
+    cSnap.docs.forEach(d => batch.delete(d.ref));
+    batch.delete(db.collection('posts').doc(docId));
+    await batch.commit();
+    showToast('🗑️ 삭제됐어요');
+    if (currentPostId === docId) backToList();
+  } catch(e) { showToast('삭제 중 오류 발생'); console.error(e); }
+}
+
+async function togglePin(docId, pin) {
+  if (!isAdmin(currentUser)) { showToast('관리자만 가능해요'); return; }
+  await db.collection('posts').doc(docId).update({ pinned: pin });
+  showToast(pin ? '📌 핀 고정됐어요' : '📌 핀 해제됐어요');
+}
+
+/* ── 수정 모달 ── */
+async function openEditModal(docId) {
+  editingPostId = docId;
+  const snap = await db.collection('posts').doc(docId).get();
+  const d    = snap.data();
+  if (!isAdmin(currentUser) && d.authorUid !== currentUser?.uid) { showToast('권한이 없어요'); return; }
+  document.getElementById('editTitle').value = d.title || '';
+  document.getElementById('editBody').value  = d.body  || '';
+  document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() { document.getElementById('editModal').classList.remove('active'); }
+
+async function submitEdit() {
+  const title = document.getElementById('editTitle').value.trim();
+  const body  = document.getElementById('editBody').value.trim();
+  if (!title || !body) { showToast('제목과 내용을 입력해주세요'); return; }
+  const btn = document.getElementById('submitEditBtn');
+  btn.disabled = true; btn.textContent = '저장 중...';
+  try {
+    await db.collection('posts').doc(editingPostId).update({
+      title, body,
+      editedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    closeEditModal();
+    showToast('✅ 수정됐어요!');
+    if (currentPostId === editingPostId) {
+      const snap = await db.collection('posts').doc(editingPostId).get();
+      renderPostFull(snap.id, snap.data());
+    }
+  } catch(e) { showToast('수정 중 오류 발생'); console.error(e); }
+  finally { btn.disabled = false; btn.textContent = '수정 완료'; }
+}
+
+/* ══════════════════════════════════════
+   댓글
+══════════════════════════════════════ */
+function loadComments(docId) {
+  if (unsubComments) unsubComments();
+  unsubComments = db.collection('posts').doc(docId).collection('comments')
+    .orderBy('createdAt','asc')
+    .onSnapshot(snap => {
+      document.getElementById('commentCountBadge').textContent = snap.size;
+      if (snap.empty) {
+        document.getElementById('commentList').innerHTML =
+          `<div style="padding:24px;text-align:center;color:var(--t4);font-size:14px;">첫 번째 댓글을 남겨보세요! 💬</div>`;
+        return;
+      }
+      document.getElementById('commentList').innerHTML = snap.docs.map(renderComment).join('');
+    });
+}
+
+function renderComment(doc) {
+  const d     = doc.data();
+  const col   = nickColor(d.authorNick||'?');
+  const ini   = nickInitial(d.authorNick||'?');
+  const admin = isAdmin(currentUser);
+  const isMe  = d.authorUid === currentUser?.uid;
+  return `
+  <div class="comment-item">
+    <div class="comment-avatar" style="background:linear-gradient(135deg,${col},#0891b2)">${ini}</div>
+    <div class="comment-content">
+      <div class="comment-author-row">
+        <span class="comment-author">${esc(d.authorNick||'익명')}${d.authorEmail===MASTER_EMAIL?' 👑':''}</span>
+        <span class="comment-time">${timeAgo(d.createdAt)}</span>
+        ${(admin||isMe)?`<button class="comment-del" onclick="deleteComment('${doc.id}')">삭제</button>`:''}
+      </div>
+      <div class="comment-text">${esc(d.text)}</div>
+    </div>
+  </div>`;
+}
+
+async function submitComment() {
+  const input = document.getElementById('commentInput');
+  const text  = input.value.trim();
+  if (!text) { showToast('댓글 내용을 입력해주세요'); return; }
+  if (!currentPostId) return;
+  const btn = document.getElementById('commentSubmitBtn');
+  btn.disabled = true;
+  try {
+    await db.collection('posts').doc(currentPostId).collection('comments').add({
+      text,
+      authorUid:   currentUser.uid,
+      authorNick:  myData.nickname||'익명',
+      authorEmail: currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection('posts').doc(currentPostId).update({
+      commentCount: firebase.firestore.FieldValue.increment(1)
+    });
+    input.value = ''; input.style.height = 'auto';
+    showToast('댓글을 달았어요 💬');
+  } catch(e) { showToast('댓글 등록 중 오류 발생'); console.error(e); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteComment(commentId) {
+  if (!currentPostId) return;
+  if (!confirm('댓글을 삭제할까요?')) return;
+  try {
+    await db.collection('posts').doc(currentPostId).collection('comments').doc(commentId).delete();
+    await db.collection('posts').doc(currentPostId).update({
+      commentCount: firebase.firestore.FieldValue.increment(-1)
+    });
+    showToast('댓글을 삭제했어요');
+  } catch(e) { showToast('삭제 중 오류 발생'); }
+}
+
+/* ══════════════════════════════════════
+   글쓰기
+══════════════════════════════════════ */
+function openWriteModal() {
+  writeCat = ''; writeSubjects = [];
+  document.getElementById('writeTitle').value = '';
+  document.getElementById('writeBody').value  = '';
+  document.querySelectorAll('.cat-select-btn').forEach(b => b.className = 'cat-select-btn');
+  document.querySelectorAll('.stag-chip').forEach(b => b.classList.remove('selected'));
+  document.getElementById('writeModal').classList.add('active');
+}
+function closeWriteModal() { document.getElementById('writeModal').classList.remove('active'); }
+
+function selectWriteCat(btn) {
+  const map = {question:'selected-q',brag:'selected-b',share:'selected-s',review:'selected-r',free:'selected-s'};
+  writeCat = btn.dataset.cat;
+  document.querySelectorAll('.cat-select-btn').forEach(b => b.className = 'cat-select-btn');
+  btn.classList.add(map[writeCat]||'selected-s');
+}
+function toggleWriteSubject(btn) {
+  btn.classList.toggle('selected');
+  const sub = btn.dataset.sub;
+  if (btn.classList.contains('selected')) { if(!writeSubjects.includes(sub)) writeSubjects.push(sub); }
+  else { writeSubjects = writeSubjects.filter(s=>s!==sub); }
+}
+
+async function submitPost() {
+  const title = document.getElementById('writeTitle').value.trim();
+  const body  = document.getElementById('writeBody').value.trim();
+  if (!writeCat) { showToast('카테고리를 선택해주세요'); return; }
+  if (!title)    { showToast('제목을 입력해주세요'); return; }
+  if (!body)     { showToast('내용을 입력해주세요'); return; }
+  const btn = document.getElementById('submitPostBtn');
+  btn.disabled = true; btn.textContent = '게시 중...';
+  try {
+    await db.collection('posts').add({
+      cat: writeCat, title, body, subjects: writeSubjects,
+      authorUid:   currentUser.uid,
+      authorNick:  myData.nickname||'익명',
+      authorEmail: currentUser.email,
+      likes: 0, likedBy: [], commentCount: 0, views: 0, pinned: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    closeWriteModal(); showToast('✅ 게시글을 올렸어요!');
+    filterCat('all', document.querySelector('.cat-tab[data-cat="all"]'));
+  } catch(e) { showToast('게시 중 오류 발생'); console.error(e); }
+  finally { btn.disabled = false; btn.textContent = '게시하기'; }
+}
+
+/* ── 카테고리 필터 ── */
+function filterCat(cat, el) {
+  currentCat = cat;
+  document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (document.getElementById('postDetail').classList.contains('active')) backToList();
+  loadPosts();
+}
+
+/* ── 유틸 ── */
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('commentInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+  });
+});
+</script>
+</body>
+</html>
