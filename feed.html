@@ -21,8 +21,8 @@
       <div class="dday-num" id="ddayNum">-</div>
       <div class="dday-info">
         <div class="dday-label">시험까지 남은 날</div>
-        <div class="dday-exam" id="ddayExam">-</div>
-        <div class="dday-msg" id="ddayMsg">매일 10문제씩!</div>
+        <div class="dday-exam" id="ddayExam">2027년 1월 20일 필기시험</div>
+        <div class="dday-msg" id="ddayMsg">매일 10문제씩! 습관이 합격을 만들어요 💪</div>
       </div>
     </div>
 
@@ -33,22 +33,16 @@
         <span class="today-badge" id="checkinBadge" style="display:none">오늘 인증 완료 ✅</span>
       </div>
 
+      <!-- 인증 방식 -->
       <div class="type-tabs">
-        <div class="type-tab active" data-type="problem" onclick="selectType(this)">
-          <span class="tt-icon">📝</span>문제풀이
-        </div>
-        <div class="type-tab" data-type="concept" onclick="selectType(this)">
-          <span class="tt-icon">📖</span>개념학습
-        </div>
-        <div class="type-tab" data-type="lecture" onclick="selectType(this)">
-          <span class="tt-icon">🎥</span>인강시청
-        </div>
-        <div class="type-tab" data-type="wrongnote" onclick="selectType(this)">
-          <span class="tt-icon">📓</span>오답노트
-        </div>
+        <div class="type-tab active" data-type="problem"   onclick="selectType(this)"><span class="tt-icon">📝</span>문제풀이</div>
+        <div class="type-tab"        data-type="concept"   onclick="selectType(this)"><span class="tt-icon">📖</span>개념학습</div>
+        <div class="type-tab"        data-type="lecture"   onclick="selectType(this)"><span class="tt-icon">🎥</span>인강시청</div>
+        <div class="type-tab"        data-type="wrongnote" onclick="selectType(this)"><span class="tt-icon">📓</span>오답노트</div>
       </div>
 
-      <div class="subject-chips" id="subjectChips">
+      <!-- 과목 -->
+      <div class="subject-chips">
         <div class="subject-chip" data-sub="회로이론"   onclick="toggleSubject(this)">⚡ 회로이론</div>
         <div class="subject-chip" data-sub="전기자기학" onclick="toggleSubject(this)">🧲 전자기학</div>
         <div class="subject-chip" data-sub="제어공학"   onclick="toggleSubject(this)">🎛️ 제어공학</div>
@@ -57,19 +51,27 @@
         <div class="subject-chip" data-sub="KEC"        onclick="toggleSubject(this)">📋 KEC</div>
       </div>
 
+      <!-- 학습량 -->
       <div class="count-row">
         <span class="count-label" id="countLabel">기출 문제 수</span>
-        <input class="count-input" type="number" id="problemCount" placeholder="0" min="0" max="999">
+        <input class="count-input" type="number" id="problemCount" placeholder="0" min="1" max="999">
         <span class="count-label" id="countUnit">문제</span>
       </div>
-      <textarea class="memo-input" id="studyMemo" placeholder="오늘 공부 한 줄 소감 (선택)"></textarea>
+
+      <!-- 소감 -->
+      <textarea class="memo-input" id="studyMemo" placeholder="오늘 공부 한 줄 소감 (선택사항)"></textarea>
+
+      <!-- 인증 버튼 -->
       <button class="btn-checkin" id="checkinBtn" onclick="submitCheckin()">✅ 오늘 인증하기</button>
+      <div id="checkinError" style="display:none;margin-top:10px;padding:10px 14px;background:#fee2e2;border-radius:10px;font-size:13px;color:#dc2626;font-weight:500;"></div>
     </div>
 
-    <!-- 피드 -->
-    <div class="section-card" style="padding:18px 20px 10px;margin-bottom:0">
+    <!-- 피드 제목 -->
+    <div class="section-card">
       <div class="section-title">📋 멤버들의 오늘</div>
     </div>
+
+    <!-- 피드 목록 -->
     <div class="feed-grid" id="feedList">
       <div class="loading" style="grid-column:1/-1">⚡ 불러오는 중...</div>
     </div>
@@ -78,42 +80,73 @@
 
   <div id="navMount"></div>
 </div>
+
 <div class="toast" id="toast"></div>
+
 <script src="common.js"></script>
 <script>
-let currentUser     = null;
-let myData          = {};
-let selectedSubjects= [];
-let selectedType    = 'problem';
-let todayCheckedIn  = false;
+// ── 전역 상태 ──
+let currentUser      = null;
+let myData           = {};
+let selectedSubjects = [];
+let selectedType     = 'problem';
+let todayCheckedIn   = false;
 
+// ── 레이아웃 마운트 ──
 mountLayout('📋 오늘의 피드', 'feed');
 
-requireAuth(async user => {
+// ── 인증 후 초기화 ──
+requireAuth(async function(user) {
   currentUser = user;
-  myData = await fetchMyData(user.uid);
+
+  try {
+    myData = await fetchMyData(user.uid);
+  } catch(e) {
+    console.error('내 정보 로드 실패:', e);
+    myData = {};
+  }
+
+  // 닉네임 반영
   renderSidebarUser(user, myData);
+
+  // 기능 초기화
   updateDDay();
-  checkTodayCheckin();
+  await checkTodayCheckin();
   loadFeed();
 });
 
+// ══════════════════════════════════════
+// D-Day
+// ══════════════════════════════════════
 function updateDDay() {
-  const exam  = myData.examDate ? new Date(myData.examDate) : new Date(2027,0,20);
-  const today = new Date(); today.setHours(0,0,0,0);
-  const diff  = Math.ceil((exam - today) / 86400000);
-  document.getElementById('ddayNum').textContent  = Math.max(0, diff);
-  document.getElementById('ddayExam').textContent = `${exam.getFullYear()}년 ${exam.getMonth()+1}월 ${exam.getDate()}일 필기시험`;
-  document.getElementById('ddayMsg').textContent  = diff > 30
-    ? '지금부터 기출 10문제씩! 습관이 합격을 만들어요 💪'
-    : diff > 7 ? '막판 스퍼트! 오답노트 집중 🔥' : '거의 다 왔어요! 컨디션 관리 💪';
+  try {
+    const examDateStr = (myData && myData.examDate) ? myData.examDate : '2027-01-20';
+    const parts = examDateStr.split('-');
+    const exam  = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    const today = new Date(); today.setHours(0,0,0,0);
+    const diff  = Math.ceil((exam - today) / 86400000);
+
+    document.getElementById('ddayNum').textContent  = Math.max(0, diff);
+    document.getElementById('ddayExam').textContent =
+      `${exam.getFullYear()}년 ${exam.getMonth()+1}월 ${exam.getDate()}일 필기시험`;
+    document.getElementById('ddayMsg').textContent =
+      diff > 30 ? '지금부터 기출 10문제씩! 습관이 합격을 만들어요 💪' :
+      diff > 7  ? '막판 스퍼트! 오답노트 집중 🔥' :
+      diff > 0  ? '거의 다 왔어요! 컨디션 관리 💪' : '오늘이 시험날! 파이팅!! 🔥';
+  } catch(e) {
+    console.error('D-Day 계산 오류:', e);
+  }
 }
 
+// ══════════════════════════════════════
+// 인증 방식 / 과목 선택
+// ══════════════════════════════════════
 function selectType(el) {
   selectedType = el.dataset.type;
   document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  const cfg = CHECKIN_TYPES[selectedType];
+
+  const cfg = CHECKIN_TYPES[selectedType] || CHECKIN_TYPES.problem;
   document.getElementById('countLabel').textContent = cfg.countLabel;
   document.getElementById('countUnit').textContent  = cfg.unit;
 }
@@ -121,81 +154,182 @@ function selectType(el) {
 function toggleSubject(el) {
   el.classList.toggle('selected');
   const sub = el.dataset.sub;
-  if (el.classList.contains('selected')) { if (!selectedSubjects.includes(sub)) selectedSubjects.push(sub); }
-  else { selectedSubjects = selectedSubjects.filter(s => s !== sub); }
-}
-
-async function checkTodayCheckin() {
-  const snap = await db.collection('checkins')
-    .where('uid','==',currentUser.uid).where('date','==',todayStr()).limit(1).get();
-  todayCheckedIn = !snap.empty;
-  if (todayCheckedIn) {
-    document.getElementById('checkinBtn').textContent = '✅ 오늘 인증 완료!';
-    document.getElementById('checkinBtn').disabled = true;
-    document.getElementById('checkinBadge').style.display = '';
+  if (el.classList.contains('selected')) {
+    if (!selectedSubjects.includes(sub)) selectedSubjects.push(sub);
+  } else {
+    selectedSubjects = selectedSubjects.filter(s => s !== sub);
   }
 }
 
+// ══════════════════════════════════════
+// 오늘 인증 여부 확인
+// ══════════════════════════════════════
+async function checkTodayCheckin() {
+  try {
+    const snap = await db.collection('checkins')
+      .where('uid', '==', currentUser.uid)
+      .where('date', '==', todayStr())
+      .limit(1)
+      .get();
+
+    if (!snap.empty) {
+      setCheckinDone();
+    }
+  } catch(e) {
+    console.error('오늘 인증 확인 오류:', e);
+  }
+}
+
+function setCheckinDone() {
+  todayCheckedIn = true;
+  const btn = document.getElementById('checkinBtn');
+  if (btn) { btn.textContent = '✅ 오늘 인증 완료!'; btn.disabled = true; }
+  const badge = document.getElementById('checkinBadge');
+  if (badge) badge.style.display = '';
+}
+
+function showCheckinError(msg) {
+  const el = document.getElementById('checkinError');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function hideCheckinError() {
+  const el = document.getElementById('checkinError');
+  if (el) el.style.display = 'none';
+}
+
+// ══════════════════════════════════════
+// 오늘 인증 제출
+// ══════════════════════════════════════
 async function submitCheckin() {
-  if (todayCheckedIn) { showToast('오늘은 이미 인증했어요! 내일 또 봐요 💪'); return; }
-  if (selectedSubjects.length === 0) { showToast('과목을 선택해주세요!'); return; }
-  const count = parseInt(document.getElementById('problemCount').value) || 0;
-  if (count === 0) { showToast('학습량을 입력해주세요!'); return; }
-  const memo = document.getElementById('studyMemo').value.trim();
+  hideCheckinError();
+
+  // 중복 인증 방지
+  if (todayCheckedIn) {
+    showToast('오늘은 이미 인증했어요! 내일 또 봐요 💪');
+    return;
+  }
+
+  // 유효성 검사
+  if (selectedSubjects.length === 0) {
+    showCheckinError('과목을 하나 이상 선택해주세요!');
+    return;
+  }
+  const countEl = document.getElementById('problemCount');
+  const count   = parseInt(countEl.value) || 0;
+  if (count <= 0) {
+    showCheckinError('학습량을 1 이상 입력해주세요!');
+    countEl.focus();
+    return;
+  }
+
+  const memo = (document.getElementById('studyMemo').value || '').trim();
   const btn  = document.getElementById('checkinBtn');
-  btn.disabled = true; btn.textContent = '저장 중...';
+  btn.disabled    = true;
+  btn.textContent = '저장 중...';
+
   try {
     const today = todayStr();
-    const udata = (await db.collection('users').doc(currentUser.uid).get()).data();
-    const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
-    const yStr  = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
-    const checkins = udata.checkinDates || [];
-    const streak   = checkins.includes(yStr) ? (udata.streak||0)+1 : 1;
-    const subjUpdate = {};
-    const oldSubs = udata.subjects || {};
-    selectedSubjects.forEach(s => { subjUpdate[`subjects.${s}`] = (oldSubs[s]||0) + count; });
-    await db.collection('users').doc(currentUser.uid).update({
-      streak, totalProblems: (udata.totalProblems||0)+count,
-      totalDays: (udata.totalDays||0)+1,
-      lastCheckin: firebase.firestore.FieldValue.serverTimestamp(),
-      checkinDates: firebase.firestore.FieldValue.arrayUnion(today),
-      ...subjUpdate
+    const yest  = yesterdayStr();
+
+    // 현재 유저 데이터 가져오기
+    const userRef  = db.collection('users').doc(currentUser.uid);
+    const userSnap = await userRef.get();
+
+    let udata = {};
+    if (userSnap.exists) {
+      udata = userSnap.data() || {};
+    } else {
+      // 문서가 없으면 기본값으로 생성
+      const nick = (currentUser.displayName || currentUser.email.split('@')[0]);
+      udata = { nickname: nick, streak:0, totalProblems:0, totalDays:0, subjects:{}, checkinDates:[] };
+      await userRef.set({ ...udata, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+
+    // 스트릭 계산
+    const checkinDates = Array.isArray(udata.checkinDates) ? udata.checkinDates : [];
+    const streak = checkinDates.includes(yest) ? (udata.streak || 0) + 1 : 1;
+
+    // 과목별 누적 업데이트 (dot notation)
+    const updateData = {
+      streak,
+      totalProblems: (udata.totalProblems || 0) + count,
+      totalDays:     (udata.totalDays     || 0) + 1,
+      lastCheckin:   firebase.firestore.FieldValue.serverTimestamp(),
+      checkinDates:  firebase.firestore.FieldValue.arrayUnion(today)
+    };
+    const oldSubjects = udata.subjects || {};
+    selectedSubjects.forEach(s => {
+      updateData[`subjects.${s}`] = (oldSubjects[s] || 0) + count;
     });
+
+    await userRef.update(updateData);
+
+    // 인증 피드에 추가
+    const cfg  = CHECKIN_TYPES[selectedType] || CHECKIN_TYPES.problem;
+    const nick = udata.nickname || currentUser.email.split('@')[0];
+
     await db.collection('checkins').add({
-      uid: currentUser.uid, nickname: udata.nickname,
-      type: selectedType, date: today,
-      subjects: selectedSubjects, count, memo, streak, cheers: 0,
+      uid:      currentUser.uid,
+      nickname: nick,
+      email:    currentUser.email || '',
+      type:     selectedType,
+      date:     today,
+      subjects: selectedSubjects,
+      count,
+      memo,
+      streak,
+      cheers:   0,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+
+    // UI 업데이트
     myData = await fetchMyData(currentUser.uid);
-    todayCheckedIn = true;
-    btn.textContent = '✅ 오늘 인증 완료!';
-    document.getElementById('checkinBadge').style.display = '';
-    showToast(`🔥 ${streak}일 연속 출석! ${count}${CHECKIN_TYPES[selectedType].unit} 완료!`);
+    renderSidebarUser(currentUser, myData);
+    setCheckinDone();
+    showToast(`🔥 ${streak}일 연속! ${count}${cfg.unit} 인증 완료!`);
+
   } catch(e) {
-    btn.disabled = false; btn.textContent = '✅ 오늘 인증하기';
-    showToast('오류가 발생했어요'); console.error(e);
+    console.error('인증 오류:', e);
+    showCheckinError(`오류가 발생했어요: ${e.message || '다시 시도해주세요'}`);
+    btn.disabled    = false;
+    btn.textContent = '✅ 오늘 인증하기';
   }
 }
 
+// ══════════════════════════════════════
+// 피드 로드
+// ══════════════════════════════════════
 function loadFeed() {
   const list = document.getElementById('feedList');
-  list.innerHTML = '<div class="loading" style="grid-column:1/-1">⚡ 불러오는 중...</div>';
-  db.collection('checkins').orderBy('createdAt','desc').limit(40).onSnapshot(snap => {
-    if (snap.empty) {
-      list.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="ei">📋</div><p>아직 인증이 없어요<br>첫 번째로 인증해보세요!</p></div>`;
-      return;
-    }
-    list.innerHTML = snap.docs.map(renderFeedItem).join('');
-  });
+
+  db.collection('checkins')
+    .orderBy('createdAt', 'desc')
+    .limit(40)
+    .onSnapshot(
+      snap => {
+        if (snap.empty) {
+          list.innerHTML = `
+            <div class="empty-state" style="grid-column:1/-1">
+              <div class="ei">📋</div>
+              <p>아직 인증이 없어요<br>첫 번째로 인증해보세요!</p>
+            </div>`;
+          return;
+        }
+        list.innerHTML = snap.docs.map(doc => renderFeedItem(doc)).join('');
+      },
+      err => {
+        console.error('피드 로드 오류:', err);
+        list.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="ei">⚠️</div><p>피드를 불러오지 못했어요<br>새로고침 해주세요</p></div>`;
+      }
+    );
 }
 
 function renderFeedItem(doc) {
   const d    = doc.data();
-  const col  = nickColor(d.nickname||'?');
-  const ini  = nickInitial(d.nickname||'?');
+  const col  = nickColor(d.nickname || '?');
+  const ini  = nickInitial(d.nickname || '?');
   const cfg  = CHECKIN_TYPES[d.type] || CHECKIN_TYPES.problem;
-  const subs = (d.subjects||[]).map(s=>`<span class="feed-subject-tag">${s}</span>`).join('');
+  const subs = (d.subjects || []).map(s => `<span class="feed-subject-tag">${s}</span>`).join('');
   const admin = isAdmin(currentUser);
   const isMe  = d.uid === currentUser?.uid;
 
@@ -204,19 +338,19 @@ function renderFeedItem(doc) {
     <div class="feed-item-top">
       <div class="feed-avatar" style="background:linear-gradient(135deg,${col},#0891b2)">${ini}</div>
       <div class="feed-meta">
-        <div class="feed-name">${d.nickname||'익명'}${isMe?' <span style="font-size:11px;color:var(--t4)">(나)</span>':''}</div>
+        <div class="feed-name">${d.nickname || '익명'}${isMe ? ' <span style="font-size:11px;color:var(--t4)">(나)</span>' : ''}</div>
         <div class="feed-time">${timeAgo(d.createdAt)}</div>
       </div>
-      ${d.streak>1?`<div class="feed-streak">🔥 ${d.streak}일</div>`:''}
+      ${d.streak > 1 ? `<div class="feed-streak">🔥 ${d.streak}일</div>` : ''}
     </div>
-    ${subs?`<div class="feed-subjects">${subs}</div>`:''}
+    ${subs ? `<div class="feed-subjects">${subs}</div>` : ''}
     <div class="feed-count">${cfg.icon} ${cfg.feedVerb} <strong>${d.count}${cfg.unit}</strong> 완료!</div>
-    ${d.memo?`<div class="feed-memo">"${d.memo}"</div>`:''}
+    ${d.memo ? `<div class="feed-memo">"${d.memo}"</div>` : ''}
     <div class="feed-actions">
-      <button class="btn-cheer" onclick="toggleCheer('${doc.id}',this)">
-        💪 화이팅! ${d.cheers>0?`(${d.cheers})`:''}
+      <button class="btn-cheer" onclick="toggleCheer('${doc.id}', this)">
+        💪 화이팅! ${d.cheers > 0 ? `(${d.cheers})` : ''}
       </button>
-      ${(admin||isMe)?`<button class="btn-delete" onclick="deleteCheckin('${doc.id}')">🗑️ 삭제</button>`:''}
+      ${(admin || isMe) ? `<button class="btn-delete" onclick="deleteCheckin('${doc.id}')">🗑️ 삭제</button>` : ''}
     </div>
   </div>`;
 }
@@ -224,8 +358,15 @@ function renderFeedItem(doc) {
 async function toggleCheer(docId, btn) {
   btn.classList.toggle('cheered');
   const inc = btn.classList.contains('cheered') ? 1 : -1;
-  await db.collection('checkins').doc(docId).update({ cheers: firebase.firestore.FieldValue.increment(inc) });
-  showToast(inc>0 ? '💪 화이팅 보냈어요!' : '취소했어요');
+  try {
+    await db.collection('checkins').doc(docId).update({
+      cheers: firebase.firestore.FieldValue.increment(inc)
+    });
+    showToast(inc > 0 ? '💪 화이팅 보냈어요!' : '취소했어요');
+  } catch(e) {
+    btn.classList.toggle('cheered');
+    showToast('오류가 발생했어요');
+  }
 }
 
 async function deleteCheckin(docId) {
@@ -233,7 +374,10 @@ async function deleteCheckin(docId) {
   try {
     await db.collection('checkins').doc(docId).delete();
     showToast('🗑️ 삭제됐어요');
-  } catch(e) { showToast('삭제 중 오류 발생'); }
+  } catch(e) {
+    showToast('삭제 중 오류가 발생했어요');
+    console.error(e);
+  }
 }
 </script>
 </body>
