@@ -20,7 +20,6 @@ const db   = firebase.firestore();
 // 🔐 마스터(관리자) 설정
 // ══════════════════════════════════════
 const MASTER_EMAIL = '49burnida@naver.com';
-
 function isAdmin(user) {
   return !!(user && user.email === MASTER_EMAIL);
 }
@@ -60,26 +59,16 @@ function timeAgo(ts) {
   if (diff < 86400) return `${Math.floor(diff/3600)}시간 전`;
   return `${Math.floor(diff/86400)}일 전`;
 }
-function computeStreakFromDates(dates) {
-  if (!dates || dates.length === 0) return 0;
-  const sorted = [...new Set(dates)].sort();
-  let streak = 1;
-  for (let i = sorted.length - 1; i > 0; i--) {
-    const diff = Math.round((new Date(sorted[i]) - new Date(sorted[i-1])) / 86400000);
-    if (diff === 1) streak++; else break;
-  }
-  return streak;
-}
 
 // ── 토스트 ──
-let toastTimer;
+let _toastTimer;
 function showToast(msg) {
   const t = document.getElementById('toast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
 // ══════════════════════════════════════
@@ -88,7 +77,7 @@ function showToast(msg) {
 function requireAuth(onReady) {
   auth.onAuthStateChanged(user => {
     if (user) { onReady(user); }
-    else { location.href = 'index.html'; }
+    else      { location.href = 'index.html'; }
   });
 }
 
@@ -98,102 +87,123 @@ async function fetchMyData(uid) {
 }
 
 // ══════════════════════════════════════
-// 사이드바 + 레이아웃
+// 사이드바 레이아웃
+// ──────────────────────────────────────
+// 사이드바는 position:fixed 로 DOM 흐름 밖에 배치.
+// headerMount 에는 탑바만, navMount 는 비워둠.
+// .app-screen 에 padding-left: var(--sidebar-w) 가 적용되어
+// 메인 콘텐츠가 사이드바와 겹치지 않음.
 // ══════════════════════════════════════
 const NAV_TABS = [
-  { id:'feed',  icon:'📋', label:'오늘 피드',   href:'feed.html',  grad:'var(--grad-feed)' },
-  { id:'rank',  icon:'🏆', label:'랭킹',        href:'rank.html',  grad:'var(--grad-rank)' },
-  { id:'board', icon:'💬', label:'커뮤니티',    href:'board.html', grad:'var(--grad-board)' },
-  { id:'my',    icon:'👤', label:'내 기록',     href:'my.html',    grad:'var(--grad-my)' },
+  { id:'feed',  icon:'📋', label:'오늘 피드',  href:'feed.html'  },
+  { id:'rank',  icon:'🏆', label:'랭킹',       href:'rank.html'  },
+  { id:'board', icon:'💬', label:'커뮤니티',   href:'board.html' },
+  { id:'my',    icon:'👤', label:'내 기록',    href:'my.html'    },
 ];
 
-function renderSidebar(activeTab) {
+function mountLayout(title, activeTab) {
+  // 1) 사이드바를 body 최상단에 직접 삽입 (fixed 이므로 위치 독립)
+  const sb = document.createElement('aside');
+  sb.className = 'sidebar';
+  sb.id = 'globalSidebar';
+  sb.innerHTML = _sidebarInner(activeTab);
+  document.body.insertBefore(sb, document.body.firstChild);
+
+  // 2) headerMount 에는 탑바만 주입
+  const headerMount = document.getElementById('headerMount');
+  if (headerMount) {
+    headerMount.innerHTML = `
+      <div class="page-topbar">
+        <div class="topbar-left">
+          <button class="sb-toggle" id="sbToggle" onclick="toggleSidebar()">☰</button>
+          <div class="topbar-title">${title}</div>
+        </div>
+        <div class="topbar-right">
+          <span id="adminChip" class="admin-chip" style="display:none">👑 관리자</span>
+          <div class="topbar-avatar" id="headerAvatar" onclick="location.href='my.html'">?</div>
+        </div>
+      </div>`;
+  }
+
+  // 3) navMount 비우기
+  const navMount = document.getElementById('navMount');
+  if (navMount) navMount.innerHTML = '';
+}
+
+function _sidebarInner(activeTab) {
   const navItems = NAV_TABS.map(t => `
-    <a class="sb-item${t.id === activeTab ? ' active' : ''}" href="${t.href}">
+    <a class="sb-item${t.id===activeTab?' active':''}" href="${t.href}">
       <span class="sb-icon">${t.icon}</span>
       <span class="sb-label">${t.label}</span>
     </a>`).join('');
 
   return `
-  <aside class="sidebar" id="globalSidebar">
     <div class="sb-logo">
-      <div class="sb-logo-icon">⚡</div>
-      <div class="sb-logo-title">전기기사<br>스터디</div>
-      <div class="sb-logo-sub">같이 공부하면 합격한다</div>
+      <div class="sb-logo-row">
+        <span class="sb-logo-icon">⚡</span>
+        <div>
+          <div class="sb-logo-title">전기기사 스터디</div>
+          <div class="sb-logo-sub">같이 공부하면 합격한다</div>
+        </div>
+      </div>
       <div class="sb-exam-chip">📅 2027년 1회차 도전!</div>
     </div>
+
     <nav class="sb-nav">
       <div class="sb-section-label">메뉴</div>
       ${navItems}
-      <div class="sb-section-label" style="margin-top:24px">도구</div>
+      <div class="sb-section-label">외부 링크</div>
       <a class="sb-item" href="https://comcbt.com" target="_blank">
         <span class="sb-icon">📝</span>
         <span class="sb-label">CBT 풀기</span>
       </a>
+      <a class="sb-item" href="https://www.q-net.or.kr" target="_blank">
+        <span class="sb-icon">🏛️</span>
+        <span class="sb-label">Q-Net 접수</span>
+      </a>
     </nav>
-    <div class="sb-user" id="sbUser">
-      <div class="sb-avatar" id="sbAvatar">?</div>
-      <div class="sb-user-info">
-        <div class="sb-user-name" id="sbName">-</div>
-        <div class="sb-user-role" id="sbRole">멤버</div>
+
+    <div class="sb-footer">
+      <div class="sb-user" id="sbUser">
+        <div class="sb-avatar" id="sbAvatar">?</div>
+        <div class="sb-user-info">
+          <div class="sb-user-name" id="sbName">로딩 중...</div>
+          <div class="sb-user-role" id="sbRole">멤버</div>
+        </div>
+        <button class="sb-logout-btn" onclick="doLogout()" title="로그아웃">⏏</button>
       </div>
-      <button class="sb-logout-btn" onclick="doLogout()" title="로그아웃">⏏</button>
-    </div>
-  </aside>
-  <div class="main-wrap">`;
+    </div>`;
 }
 
-function renderTopBar(title) {
-  return `
-    <div class="page-topbar">
-      <div class="topbar-title">${title}</div>
-      <div class="topbar-right">
-        <div id="adminChip" style="display:none" class="admin-chip">👑 관리자</div>
-        <div class="topbar-avatar" id="headerAvatar" onclick="location.href='my.html'">?</div>
-      </div>
-    </div>
-    <div class="page-content">`;
+// 사이드바 토글 (모바일 대응)
+function toggleSidebar() {
+  document.getElementById('globalSidebar').classList.toggle('open');
 }
 
-// mountLayout: 사이드바 + 탑바를 headerMount에, 닫는 태그를 navMount에 주입
-function mountLayout(title, activeTab) {
-  const headerMount = document.getElementById('headerMount');
-  const navMount    = document.getElementById('navMount');
-  if (headerMount) headerMount.innerHTML = renderSidebar(activeTab) + renderTopBar(title);
-  if (navMount)    navMount.innerHTML    = '</div></div>'; // .page-content + .main-wrap 닫기
-}
-
-// 사이드바 유저 정보 채우기 (공통)
+// 유저 정보 사이드바에 채우기
 function renderSidebarUser(user, myData) {
   const nick  = myData.nickname || user.email.split('@')[0];
   const admin = isAdmin(user);
+  const grad  = `linear-gradient(135deg,${nickColor(nick)},#0891b2)`;
 
-  const av  = document.getElementById('sbAvatar');
-  const nm  = document.getElementById('sbName');
-  const rl  = document.getElementById('sbRole');
-  const hav = document.getElementById('headerAvatar');
-  const ac  = document.getElementById('adminChip');
+  const set = (id, prop, val) => { const el=document.getElementById(id); if(el) el[prop]=val; };
+  const setStyle = (id, prop, val) => { const el=document.getElementById(id); if(el) el.style[prop]=val; };
 
-  const color = nickColor(nick);
-  const grad  = `linear-gradient(135deg,${color},var(--cyan))`;
+  set('sbAvatar','textContent', nickInitial(nick));
+  setStyle('sbAvatar','background', grad);
+  set('sbName','textContent', nick);
+  set('sbRole','textContent', admin ? '👑 관리자' : '스터디 멤버');
+  if (admin) { setStyle('sbRole','color','#a78bfa'); }
 
-  if (av)  { av.textContent = nickInitial(nick); av.style.background = grad; }
-  if (nm)  nm.textContent   = nick;
-  if (rl)  { rl.textContent = admin ? '👑 관리자' : '스터디 멤버'; rl.style.color = admin ? '#a78bfa' : ''; }
-  if (hav) { hav.textContent = nickInitial(nick); hav.style.background = grad; }
-  if (ac && admin) ac.style.display = 'flex';
+  set('headerAvatar','textContent', nickInitial(nick));
+  setStyle('headerAvatar','background', grad);
+
+  if (admin) setStyle('adminChip','display','inline-flex');
 }
 
-// 헤더 아바타 단독 렌더 (구버전 호환)
+// 구버전 호환
 function renderHeaderAvatar(myData) {
-  const el  = document.getElementById('headerAvatar');
-  const av  = document.getElementById('sbAvatar');
-  const nm  = document.getElementById('sbName');
-  const nick = myData.nickname || '?';
-  const grad = `linear-gradient(135deg,${nickColor(nick)},var(--cyan))`;
-  if (el)  { el.textContent = nickInitial(nick); el.style.background = grad; }
-  if (av)  { av.textContent = nickInitial(nick); av.style.background = grad; }
-  if (nm)  nm.textContent   = nick;
+  renderSidebarUser(auth.currentUser || {email:''}, myData);
 }
 
 // 공통 로그아웃
